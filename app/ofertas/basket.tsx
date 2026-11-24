@@ -105,11 +105,12 @@ export default function Basket() {
     <section className="offers-section">
       <h1>Monte sua cesta</h1>
       <p>Escolha os produtos e envie a cesta para combinar a entrega no Rio de Janeiro ou em São Paulo.</p>
+      <p><a href="/produtores">Conheça quem produz</a></p>
       <div className="offers-grid">
         {offers.map(offer => {
           const quantity = cart[offer.id] ?? 0
-          return <article className="offer-card" key={offer.id}>
-            <p className="offer-brand">{offer.brand} · {offer.origin}</p>
+          return <article className="offer-card" id={"oferta-" + offer.id} key={offer.id}>
+            <p className="offer-brand"><a href={"/produtores/" + offer.producerId}>{offer.brand}</a> · {offer.origin}</p>
             <h2>{offer.name}</h2>
             {offer.variant && <p>{offer.variant}</p>}
             <p><strong>{currency.format(offer.price / 100)}</strong> · {offer.grams === 1000 ? "1 kg" : offer.grams + " g"}</p>

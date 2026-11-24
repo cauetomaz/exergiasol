@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
-type Lot = { id: string; product: string; producer: string; region: string; date: string; peers: { name: string; date: string }[] }
+type Lot = { catalog?: { producerId: string; offerId: string } | null; id: string; product: string; producer: string; region: string; date: string; peers: { name: string; date: string }[] }
 type Entry = { id: string; product: string; date: string; count: string }
 const sample: Lot = {
   id: "CACAU-001", product: "Cacau seco", producer: "Sítio Boa Sombra", region: "Ilhéus, BA", date: "2026-11-10",
@@ -159,6 +159,8 @@ export default function Selo() {
             })}>Copiar link</button>
           </> : lot.peers.length < 2 && <p><a href={"#convite/" + lot.id}>Pedir confirmação</a></p>}
         {mode !== "selo" && <p><a href={"#selo/" + lot.id}>Ver selo</a></p>}
+        {lot.catalog && <p><a href={"/produtores/" + lot.catalog.producerId}>Conhecer o produtor</a>
+          {lot.catalog.offerId && <> · <a href={"/ofertas#oferta-" + lot.catalog.offerId}>Ver oferta vinculada</a></>}</p>}
         <p className="hint">Reconhecimento registrado pela plataforma e consultável pelo link do lote.</p>
       </section> : <>
         <section className="intro">

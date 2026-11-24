@@ -274,7 +274,9 @@ async function sealRoute(request, env, bucket, url) {
   if (resource && resource !== "mine" && !sealId.test(resource)) return error("Lote não encontrado.", 404)
   if (resource && resource !== "mine" && !action && request.method === "GET") {
     const stored = await bucket.get(sealKey(resource))
-    return stored ? json({ lot: publicSeal(await stored.json()) }) : error("Lote não encontrado.", 404)
+    if (!stored) return error("Lote não encontrado.", 404)
+    const { links } = await originLinks(bucket)
+    return json({ lot: { ...publicSeal(await stored.json()), catalog: links[resource] ?? null } })
   }
   const producer = await sealProducer(request, env, bucket)
   if (!producer) return error("Entre com uma conta de produtor.", 403)
@@ -417,6 +419,48 @@ async function adminBasketRoute(request, bucket, url) {
   return saved ? json({ ok: true }) : error("A cesta foi atualizada em outra sessão. Tente novamente.", 409)
 }
 
+const originLinksKey = "config/origin-links.json"
+
+async function originLinks(bucket) {
+  const file = await bucket.get(originLinksKey)
+  return { file, links: file ? await file.json() : {} }
+}
+
+async function originRoute(request, bucket, url, admin) {
+  const { file, links } = await originLinks(bucket)
+  if (request.method === "GET") {
+    const producerId = url.searchParams.get("producer")
+    if (producerId && !producers.some(producer => producer.id === producerId)) return error("Produtor não encontrado.", 404)
+    const matches = Object.entries(links).filter(([, link]) => !producerId || link.producerId === producerId)
+    const items = (await Promise.all(matches.map(async ([id, link]) => {
+      const stored = await bucket.get(sealKey(id))
+      if (!stored) return null
+      const lot = await stored.json()
+      return { ...link, id, product: lot.product, producer: lot.producer, region: lot.region, date: lot.date, confirmations: lot.peers.length }
+    }))).filter(Boolean)
+    return json({ links: items })
+  }
+  if (!admin || request.method !== "POST") return error("Operação inválida.", 405)
+  const data = await request.json()
+  if (typeof data?.id !== "string" || !sealId.test(data.id)) return error("Informe um link ou código de lote válido.", 400)
+  if (data.remove === true) {
+    delete links[data.id]
+  } else {
+    if (!producers.some(producer => producer.id === data.producerId)) return error("Selecione um produtor do catálogo.", 400)
+    if (typeof data.offerId !== "string" || (data.offerId && !offers.some(offer => offer.id === data.offerId && offer.producerId === data.producerId))) {
+      return error("Selecione uma oferta do produtor escolhido.", 400)
+    }
+    const stored = await bucket.get(sealKey(data.id))
+    if (!stored) return error("Lote não encontrado. Use um selo registrado neste site.", 404)
+    if (!Object.hasOwn(links, data.id) && Object.keys(links).length >= 80) return error("Limite de vínculos atingido.", 409)
+    links[data.id] = { producerId: data.producerId, offerId: data.offerId }
+  }
+  const saved = await bucket.put(originLinksKey, JSON.stringify(links), {
+    onlyIf: file ? { etagMatches: file.etag } : { etagDoesNotMatch: "*" },
+  })
+  return saved ? json({ ok: true }) : error("Os vínculos mudaram em outra sessão. Atualize e tente novamente.", 409)
+}
+
 async function route(request, env, url) {
   const { pathname } = url
   const method = request.method
@@ -445,6 +489,19 @@ async function route(request, env, url) {
   if (pathname.startsWith("/api/admin/") && !(await authorized(request, env))) return error("Entre como administrador.", 401)
   const bucket = env.BUCKET
   if (!bucket) return error("Armazenamento privado indisponível.", 503)
+  if (pathname === "/api/origin") return originRoute(request, bucket, url, false)
+  if (pathname === "/api/admin/origin") return originRoute(request, bucket, url, true)
+  if (pathname === "/api/admin/origin/lots" && method === "GET") {
+    const page = await bucket.list({ prefix: "seals/", limit: 12, cursor: url.searchParams.get("cursor") || undefined })
+    const { links } = await originLinks(bucket)
+    const lots = (await Promise.all(page.objects.map(async item => {
+      const file = await bucket.get(item.key)
+      if (!file) return null
+      const lot = publicSeal(await file.json())
+      return { ...lot, catalog: links[lot.id] ?? null }
+    }))).filter(Boolean)
+    return json({ lots, cursor: page.truncated ? page.cursor : "" })
+  }
   if (pathname === "/api/baskets") return basketRoute(request, env, bucket, url)
   if (pathname === "/api/admin/baskets" || pathname.startsWith("/api/admin/baskets/")) return adminBasketRoute(request, bucket, url)
 

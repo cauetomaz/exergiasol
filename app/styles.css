@@ -204,3 +204,7 @@ summary { cursor: pointer; }
 .basket-jump { position: sticky; top: 0; z-index: 1; background: #193c2c; border-radius: .65rem; padding: .75rem 1rem; margin-bottom: 1rem; }
 .basket-jump a { color: #fffdf5; font-weight: 700; }
 #basket-title { scroll-margin-top: 4rem; }
+.producer-title { margin: 1.6rem 0; }
+.producer-title > p { color: #526353; margin-bottom: .45rem; }
+.producer-title h2 { font: 1.45rem Georgia, serif; margin-top: .6rem; }
+.offer-card:target { outline: 3px solid #ae681b; outline-offset: 3px; }

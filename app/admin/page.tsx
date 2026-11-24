@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
+import OriginLinks from "./origin-links"
 import BasketRequests from "./basket-requests"
 import FreightPlan from "./freight-plan"
 
@@ -99,6 +100,7 @@ export default function Admin() {
           setSettings(empty)
         })}>Sair</button>
         <BasketRequests />
+        <OriginLinks />
         <section className="panel">
           <h2>Fretes da Costa do Cacau, BA</h2>
           <p>Cada pedido Pix aprovado conta como uma cesta. Defina o mínimo de cestas para cada cidade.</p>

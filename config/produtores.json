@@ -1,0 +1,22 @@
+[
+  {
+    "id": "terra-preta",
+    "name": "Terra Preta",
+    "origin": "Uruçuca, BA",
+    "title": "Cupuaçu da Fazenda Tupinambá",
+    "story": [
+      "Na Fazenda Tupinambá, Sol cultiva cacau, cupuaçu, açaí, banana e outras frutas em sistema de cabruca. Segundo o relato na planilha de ofertas, o manejo prioriza o cuidado com a água, a fauna e a flora. Parte da produção é para consumo da família e os excedentes complementam a renda.",
+      "Os produtos Terra Preta são preparados e embalados artesanalmente. Nesta cesta, a marca oferece cupuaçu cristalizado com açúcar comum ou de coco e amêndoas de cupuaçu desidratadas."
+    ]
+  },
+  {
+    "id": "seo-cacao",
+    "name": "Seo Cacao",
+    "origin": "Itacaré, BA",
+    "title": "Chocolate de origem em Itacaré",
+    "story": [
+      "A Seo Cacao apresenta o chocolate como uma forma de transformar o cacau cultivado no território em sustento e de valorizar o trabalho de quem o produz. O catálogo reúne chocolate de origem e amêndoas de cacau caramelizadas e torradas.",
+      "Na planilha de ofertas, a marca relata que a propriedade está em processo de certificação orgânica participativa pela Rede de Agroecologia Povos da Mata."
+    ]
+  }
+]
