@@ -49,3 +49,6 @@ details { margin-top: 1rem; }
 summary { cursor: pointer; }
 .admin-title { margin-top: 1rem; font-size: clamp(2rem, 6vw, 3rem); }
 .account-links { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem 1.25rem; }
+.seal-nav { display: flex; flex-wrap: wrap; gap: .7rem 1.1rem; margin-bottom: 1.4rem; }
+.seal-page .totals dd { text-align: right; overflow-wrap: anywhere; }
+.seal-page input[type="checkbox"] { min-height: auto; }

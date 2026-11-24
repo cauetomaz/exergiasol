@@ -238,6 +238,88 @@ async function freightRoute(request, bucket) {
   return json({ ok: true })
 }
 
+const sealId = new RegExp("^([a-f0-9]{32})-(" + idPattern + ")$")
+const sealKey = id => "seals/" + id.replace("-", "/")
+const publicSeal = ({ owner, peers, ...lot }) => ({
+  ...lot, peers: peers.map(({ name, date }) => ({ name, date })),
+})
+
+async function sealProducer(request, env, bucket) {
+  const session = await getCustomerSession(request, env.CUSTOMER_SECRET, sign, equal)
+  if (session) {
+    const record = await bucket.get(session.key)
+    const account = record && await record.json()
+    if (account && account.verified !== false && (!account.passwordChangedAt || session.issued >= account.passwordChangedAt)) {
+      return account.profile.role === "producer" ? { id: session.key, name: account.profile.name } : null
+    }
+  }
+  const identity = request.headers.get("oai-authenticated-user-id")
+  if (!identity) return null
+  const id = "accounts/" + hex(await crypto.subtle.digest("SHA-256", encoder.encode(identity)))
+  const record = await bucket.get(id)
+  const profile = record && await record.json()
+  return profile?.role === "producer" ? { id, name: profile.name } : null
+}
+
+async function sealRoute(request, env, bucket, url) {
+  const parts = url.pathname.split("/")
+  const resource = parts[3]
+  const action = parts[4]
+  if (parts.length > 5 || (action && action !== "confirm")) return error("Rota inválida.", 404)
+  if (resource && resource !== "mine" && !sealId.test(resource)) return error("Lote não encontrado.", 404)
+  if (resource && resource !== "mine" && !action && request.method === "GET") {
+    const stored = await bucket.get(sealKey(resource))
+    return stored ? json({ lot: publicSeal(await stored.json()) }) : error("Lote não encontrado.", 404)
+  }
+  const producer = await sealProducer(request, env, bucket)
+  if (!producer) return error("Entre com uma conta de produtor.", 403)
+  if (!env.CUSTOMER_SECRET) return error("Registro de lotes temporariamente indisponível.", 503)
+  const namespace = (await sign(env.CUSTOMER_SECRET, "seal-owner:" + producer.id)).slice(0, 32)
+  if (resource === "mine" && request.method === "GET") {
+    const page = await bucket.list({
+      prefix: "seals/" + namespace + "/", include: ["customMetadata"], limit: 30,
+      cursor: url.searchParams.get("cursor") || undefined,
+    })
+    return json({ lots: page.objects.map(item => item.customMetadata), cursor: page.truncated ? page.cursor : "" })
+  }
+  if (request.method !== "POST") return error("Operação inválida.", 405)
+  const data = await request.json()
+  if (!resource) {
+    const fields = ["product", "producer", "region", "date"]
+    if (!fields.every(key => typeof data?.[key] === "string" && data[key].trim() && data[key].length <= 80)) {
+      return error("Preencha produto, produtor, região e data.", 400)
+    }
+    const date = data.date.trim()
+    const parsed = new Date(date + "T00:00:00Z")
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== date) {
+      return error("Informe uma data de lote válida.", 400)
+    }
+    const id = namespace + "-" + crypto.randomUUID()
+    const fieldsTrimmed = Object.fromEntries(fields.map(key => [key, data[key].trim()]))
+    const lot = { id, ...fieldsTrimmed, owner: producer.id, peers: [] }
+    const saved = await bucket.put(sealKey(id), JSON.stringify(lot), {
+      onlyIf: { etagDoesNotMatch: "*" }, customMetadata: { id, product: lot.product, date, count: "0" },
+    })
+    return saved ? json({ lot: publicSeal(lot) }, 201) : error("Tente registrar o lote novamente.", 409)
+  }
+  if (action !== "confirm" || resource === "mine") return error("Operação inválida.", 405)
+  if (data?.visited !== true) return error("Confirme que você visitou o lote.", 400)
+  const key = sealKey(resource)
+  const stored = await bucket.get(key)
+  if (!stored) return error("Lote não encontrado.", 404)
+  const lot = await stored.json()
+  if (lot.owner === producer.id) return error("O próprio produtor não pode confirmar o lote.", 409)
+  if (lot.peers.some(peer => peer.id === producer.id)) return error("Você já confirmou este lote.", 409)
+  if (lot.peers.length >= 2) return error("Este lote já tem as duas confirmações.", 409)
+  const today = new Intl.DateTimeFormat("sv-SE", {timeZone: "America/Sao_Paulo"}).format(new Date())
+  lot.peers.push({ id: producer.id, name: producer.name, date: today })
+  const saved = await bucket.put(key, JSON.stringify(lot), {
+    onlyIf: { etagMatches: stored.etag },
+    customMetadata: { id: lot.id, product: lot.product, date: lot.date, count: String(lot.peers.length) },
+  })
+  return saved ? json({ lot: publicSeal(lot) }) : error("O lote mudou. Atualize a página e tente novamente.", 409)
+}
+
 async function route(request, env, url) {
   const { pathname } = url
   const method = request.method
@@ -266,6 +348,8 @@ async function route(request, env, url) {
   if (pathname.startsWith("/api/admin/") && !(await authorized(request, env))) return error("Entre como administrador.", 401)
   const bucket = env.BUCKET
   if (!bucket) return error("Armazenamento privado indisponível.", 503)
+  if (pathname === "/api/seals" || pathname.startsWith("/api/seals/")) return sealRoute(request, env, bucket, url)
+
   if (pathname === "/api/customer/session") {
     if (method === "DELETE") return json({ ok: true }, 200, { "Set-Cookie": customerCookie("", 0) })
     if (method !== "POST") return error("Operação inválida.", 405)
