@@ -80,6 +80,27 @@ async function route(request, env, url) {
   if (pathname.startsWith("/api/admin/") && !(await authorized(request, env))) return error("Entre como administrador.", 401)
   const bucket = env.BUCKET
   if (!bucket) return error("Armazenamento privado indisponível.", 503)
+  if (pathname === "/api/profile") {
+    const identity = request.headers.get("oai-authenticated-user-id")
+    if (!identity) return error("Entre com ChatGPT para acessar seu cadastro.", 401)
+    const key = "accounts/" + hex(await crypto.subtle.digest("SHA-256", encoder.encode(identity)))
+    const stored = await bucket.get(key)
+    if (method === "GET") return json({ profile: stored ? await stored.json() : null })
+    if (method !== "POST") return error("Operação inválida.", 405)
+    if (stored) return error("Esta conta já tem um cadastro.", 409)
+    const data = await request.json()
+    const name = typeof data?.name === "string" ? data.name.trim() : ""
+    const city = typeof data?.city === "string" ? data.city.trim() : ""
+    if (!["buyer", "producer"].includes(data?.role) || !name || name.length > 100
+      || (data.role === "producer" && (!city || city.length > 100))) {
+      return error("Confira o tipo de cadastro, o nome e a cidade do produtor.", 400)
+    }
+    const profile = { role: data.role, name, ...(data.role === "producer" ? { city } : {}) }
+    const saved = await bucket.put(key, JSON.stringify(profile), { onlyIf: { etagDoesNotMatch: "*" } })
+    if (!saved) return error("Esta conta já tem um cadastro.", 409)
+    return json({ profile }, 201)
+  }
+
   if (pathname === "/api/config" && method === "GET") return json(await getConfig(bucket))
 
   if (pathname === "/api/admin/config" && method === "POST") {

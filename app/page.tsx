@@ -141,7 +141,7 @@ export default function Home() {
         {shopping ? <Checkout address={address} walletName={walletName} network={network} /> : (
           <button className="primary start" onClick={() => setShopping(true)}>Ver cesta</button>
         )}
-        <footer><a href="/admin">Acesso administrativo</a></footer>
+        <footer className="account-links"><a href="/conta">Cadastro e minha conta</a><a href="/admin">Acesso administrativo</a></footer>
       </main>
     </>
   )
