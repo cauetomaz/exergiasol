@@ -130,6 +130,7 @@ export default function Home() {
             <div className="exergia-actions">
               <a className="exergia-button exergia-gold" href="/selo#registrar">Registrar lote</a>
               <a className="exergia-button exergia-outline" href="/selo#selo/CACAU-001">Ver um selo</a>
+              <a className="exergia-button exergia-outline" href="#como-comprar">Como comprar</a>
             </div>
           </div>
           <div className="exergia-art" aria-hidden="true">
@@ -150,6 +151,24 @@ export default function Home() {
               </article>
             ))}
           </div>
+        </section>
+        <section id="como-comprar" className="exergia-section" aria-labelledby="exergia-buy-title">
+          <h2 id="exergia-buy-title">Como comprar</h2>
+          <div className="exergia-steps">
+            <article>
+              <h3>Escolha sua cesta</h3>
+              <p>Informe para quantos adultos é a compra. Para pedidos por Pix, selecione Rio de Janeiro ou São Paulo no checkout.</p>
+            </article>
+            <article>
+              <h3>Envie o comprovante Pix</h3>
+              <p>Anexe o comprovante no checkout e acompanhe a aprovação. Se quiser experimentar o fluxo SOL, use a rede de testes Devnet.</p>
+            </article>
+            <article>
+              <h3>Aguarde o fechamento do frete</h3>
+              <p>Quando os pedidos Pix aprovados atingirem o mínimo da cidade, a equipe pode reuni-los em um frete da Costa do Cacau.</p>
+            </article>
+          </div>
+          <p className="exergia-buy-action"><a className="exergia-button exergia-gold" href="#cestas">Ver cesta</a></p>
         </section>
         <section id="cestas" className="exergia-section exergia-commerce" aria-labelledby="exergia-cestas-title">
           <h2 id="exergia-cestas-title">Cestas de produtores locais</h2>

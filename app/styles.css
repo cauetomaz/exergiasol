@@ -142,3 +142,5 @@ summary { cursor: pointer; }
   .exergia-header nav { gap: 12px; }
   .exergia-main { padding: 12px 16px 36px; }
 }
+.exergia-steps article > h3:first-child { margin-top: 0; }
+.exergia-buy-action { margin: 16px 0 0; }
