@@ -37,6 +37,7 @@ export default function Basket() {
         Number.isInteger(data?.[offer.id]) ? Math.min(offer.limit, Math.max(0, data[offer.id])) : 0])))
     } catch {}
     setLoaded(true)
+    if (window.location.hash === "#basket-title") setReview(true)
     fetch("/api/profile", { cache: "no-store" }).then(async response => {
       if (response.ok) setProfile((await response.json()).profile?.role ?? "")
     }).catch(() => {})
@@ -46,6 +47,12 @@ export default function Basket() {
     if (!loaded) return
     try { sessionStorage.setItem(storageName, JSON.stringify(cart)) } catch {}
   }, [cart, loaded])
+
+  useEffect(() => {
+    if (profile === "buyer" && window.location.hash === "#minhas-solicitacoes") {
+      document.getElementById("minhas-solicitacoes")?.scrollIntoView()
+    }
+  }, [profile])
 
   function change(id: string, quantity: number, limit: number) {
     setCart(previous => ({ ...previous, [id]: Math.max(0, Math.min(limit, quantity)) }))
@@ -143,7 +150,7 @@ export default function Basket() {
         <p aria-live="polite"><strong>{currency.format(total / 100)}</strong> em produtos · {kilograms.format(grams / 1000)} kg</p>
         <p>Frete e disponibilidade serão confirmados pela equipe.</p>
         {!review ? <button className="primary" onClick={() => setReview(true)}>Continuar para entrega</button>
-          : profile !== "buyer" ? <p><a href="/conta">Entrar ou criar conta de comprador</a>. A seleção fica guardada nesta aba.</p>
+          : profile !== "buyer" ? <p><a href="/conta?voltar=%2Fofertas%23basket-title">Entrar ou criar conta de comprador</a>. A seleção fica guardada nesta aba.</p>
             : <form onSubmit={submit} className="basket-delivery">
               <p>Seu contato e endereço ficam disponíveis para a equipe que organiza a entrega.</p>
               <div className="basket-fields">
@@ -163,11 +170,12 @@ export default function Basket() {
                     autoComplete={channel === "email" ? "email" : "tel"} maxLength={channel === "email" ? 254 : 25} />
                 </label>
               </div>
+              <p><a href="/termos#termos" target="_blank" rel="noreferrer">Termos do piloto e uso dos dados</a></p>
               <button className="primary" disabled={saving}>{saving ? "Enviando…" : "Enviar solicitação"}</button>
             </form>}
       </> : !notice && <p>Adicione um produto para começar.</p>}
     </section>
-    {profile === "buyer" && <section className="panel">
+    {profile === "buyer" && <section className="panel" id="minhas-solicitacoes">
       <h2>Minhas solicitações</h2>
       <button onClick={() => void history()}>{opened ? "Atualizar solicitações" : "Ver solicitações"}</button>
       {opened && (orders.length ? <ul>{orders.map(item => <li key={item.id}>

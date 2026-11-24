@@ -81,7 +81,6 @@ export default function Admin() {
   }
 
   return <>
-    <header className="top"><span className="brand">Exergia<span> SOL</span></span><span className="test">Administração</span></header>
     <main>
       <a href="/">Voltar para a cesta</a>
       <h1 className="admin-title">Administração</h1>

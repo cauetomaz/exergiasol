@@ -230,27 +230,34 @@ export default function Home() {
   const evmWallets = ethereum.length ? ethereum : fallback ? [fallback] : []
   return <>
     {inside ? <>
-      <header className="top">
-        <span className="brand">Exergia<span> SOL</span></span>
-        <button ref={entry} className="wallet-manage" onClick={() => dialog.current?.showModal()}>
-          {connected ? "Minha carteira" : "Conectar carteira"}
-        </button>
-      </header>
       <main className="wallet-app offers-app">
+        <div className="journey-actions"><button ref={entry} onClick={() => dialog.current?.showModal()}>
+          {connected ? "Minha carteira" : "Conectar carteira"}
+        </button></div>
         <Basket />
         <nav className="wallet-app-nav" aria-label="Mais áreas do Exergia SOL">
-          <a href="/selo">Selo entre pares</a><a href="/conta">Minha conta</a><a href="/admin">Administração</a><a href="/cestas">Checkout de teste</a>
+          <a href="/cestas">Checkout de teste</a>
         </nav>
       </main>
     </> : <main className="wallet-home"><div className="wallet-cover">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/exergia-cacau.webp" alt="Fruto de cacau na agrofloresta da Costa do Cacau" />
       <div className="wallet-cover-content">
-        <h1>Exergia <em>SOL</em></h1>
-        <button ref={entry} className="exergia-button exergia-gold" disabled={busy} onClick={() => dialog.current?.showModal()}>
-          {connected ? "Ver carteira" : "Entrar com carteira"}
-        </button>
+        <p className="journey-kicker">Costa do Cacau · Bahia</p>
+        <h1>Da Costa do Cacau<br />para a sua <em>cesta</em></h1>
+        <p>Escolha produtos de quem cultiva e transforma cacau e cupuaçu no sul da Bahia.</p>
+        <div className="journey-actions">
+          <a className="exergia-button exergia-gold" href="/ofertas">Montar minha cesta</a>
+          <button ref={entry} className="wallet-cover-button" disabled={busy} onClick={() => dialog.current?.showModal()}>
+            {connected ? "Ver carteira" : "Conectar carteira"}
+          </button>
+        </div>
       </div>
+    </div>
+    <div className="journey-grid wallet-home-paths">
+      <article><h2><a href="/produtores">Quem produz</a></h2><p>Leia as histórias e consulte a origem dos lotes.</p></article>
+      <article><h2><a href="/participar">Quero produzir</a></h2><p>Ative o perfil de produtor e registre seus lotes.</p></article>
+      <article><h2><a href="/termos">Como funciona</a></h2><p>Entenda a compra coletiva, a entrega e o selo entre pares.</p></article>
     </div></main>}
     <dialog ref={dialog} className="wallet-dialog" aria-labelledby="wallet-entry-title" onClose={() => entry.current?.focus()}>
       <div className="wallet-dialog-head">

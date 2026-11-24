@@ -63,8 +63,8 @@ export default function Selo() {
     window.addEventListener("hashchange", readLocation)
     void readLocation()
     request("/api/profile").then(result => {
-      if (result.profile?.role === "producer") {
-        setProducer(result.profile.name)
+      if (result.profile?.role === "producer" || result.profile?.producer) {
+        setProducer(result.profile.producer?.name ?? result.profile.name)
         void loadMine().catch(() => setError("Não foi possível carregar seus lotes."))
       }
     }).catch(() => {})
@@ -96,7 +96,6 @@ export default function Selo() {
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date())
 
   return <>
-    <header className="top"><span className="brand">Exergia<span> SOL</span></span><span className="test">Costa do Cacau</span></header>
     <main className="seal-page">
       <nav className="seal-nav" aria-label="Selo entre pares">
         <a href="/">Cestas</a><a href="#inicio">Selo entre pares</a><a href="#lotes">Meus lotes</a><a href="#roadmap">Roadmap</a>
@@ -105,7 +104,7 @@ export default function Selo() {
       {notice && <p role="status">{notice}</p>}
       {mode === "registrar" ? <section className="panel">
         <h1 className="admin-title">Registrar lote</h1>
-        {!producer ? <p><a href="/conta">Entre com uma conta de produtor</a> para registrar lotes.</p> : <form onSubmit={register}>
+        {!producer ? <p><a href="/participar?selo=registrar">Ative seu perfil de produtor</a> para registrar lotes.</p> : <form onSubmit={register}>
           <p>Estes dados ficam visíveis para quem receber o link do lote.</p>
           <label className="field">Produto<input name="product" required maxLength={80} /></label>
           <label className="field">Apelido público do produtor<input name="producer" required maxLength={80} defaultValue={producer.slice(0, 80)} /></label>
@@ -121,7 +120,7 @@ export default function Selo() {
           </li>)}</ul> : <p>Você ainda não registrou lotes.</p>}
           {cursor && <button disabled={busy} onClick={() => void run(() => loadMine(cursor))}>Carregar mais</button>}
           <p><a href="#registrar">Registrar lote</a></p>
-        </> : <p><a href="/conta">Entre com uma conta de produtor</a> para ver seus lotes.</p>}
+        </> : <p><a href="/participar?selo=lotes">Acesse a área do produtor</a> para ver seus lotes.</p>}
         <a href="#selo/CACAU-001">Ver selo de exemplo</a>
       </section> : mode === "roadmap" ? <section className="panel">
         <h1 className="admin-title">Roadmap da Exergia</h1>
@@ -149,7 +148,7 @@ export default function Selo() {
             <p>Confirmação pública como {producer}</p>
             <label><input type="checkbox" required /> Visitei o lote e confirmo os dados acima.</label>
             <p><button className="primary" disabled={busy}>Confirmar origem</button></p>
-          </form> : <p><a href="/conta">Entre com uma conta de produtor</a> e reabra este convite para confirmar.</p>
+          </form> : <p><a href={"/participar?selo=" + encodeURIComponent("confirmar/" + lot.id)}>Entrar como produtor para confirmar este lote</a>.</p>
           : mode === "convite" ? <>
             <p>Compartilhe com produtores que visitaram o lote.</p>
             <label className="field">Link de confirmação<input readOnly value={new URL("/selo#confirmar/" + lot.id, window.location.origin).href} onFocus={event => event.currentTarget.select()} /></label>

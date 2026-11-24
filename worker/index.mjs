@@ -263,7 +263,11 @@ async function signedProfile(request, env, bucket) {
 
 async function sealProducer(request, env, bucket) {
   const user = await signedProfile(request, env, bucket)
-  return user?.profile.role === "producer" ? { id: user.id, name: user.profile.name } : null
+  if (!user) return null
+  const producer = user.profile.producer
+  return producer || user.profile.role === "producer"
+    ? { id: user.id, name: producer?.name ?? user.profile.name }
+    : null
 }
 
 async function sealRoute(request, env, bucket, url) {
@@ -562,6 +566,27 @@ async function route(request, env, url) {
     }
     if (account.verified === false) return error("Confirme seu e-mail para entrar.", 403)
     return json({ profile: account.profile }, 200, { "Set-Cookie": await makeCustomerSession(key, secret, sign) })
+  }
+
+  if (pathname === "/api/profile/producer") {
+    if (method !== "POST") return error("Operação inválida.", 405)
+    const user = await signedProfile(request, env, bucket)
+    if (!user) return error("Entre na sua conta antes de ativar o perfil.", 401)
+    const data = await request.json()
+    const name = typeof data?.name === "string" ? data.name.trim() : ""
+    const city = typeof data?.city === "string" ? data.city.trim() : ""
+    if (!name || name.length > 80 || !city || city.length > 100 || data.accepted !== true) {
+      return error("Confira o nome, município e aceite dos termos.", 400)
+    }
+    const file = await bucket.get(user.id)
+    if (!file) return error("Conta não encontrada.", 404)
+    const account = await file.json()
+    const emailAccount = user.id.startsWith("email-accounts/")
+    const profile = emailAccount ? account.profile : account
+    if (profile.role === "producer" || profile.producer) return json({ profile })
+    const next = { ...profile, producer: { name, city, activatedAt: new Date().toISOString(), termsVersion: "pilot-1" } }
+    const stored = await bucket.put(user.id, JSON.stringify(emailAccount ? { ...account, profile: next } : next), { onlyIf: { etagMatches: file.etag } })
+    return stored ? json({ profile: next }) : error("A conta mudou em outra sessão. Atualize e tente novamente.", 409)
   }
 
   if (pathname === "/api/profile") {

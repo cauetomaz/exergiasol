@@ -3,10 +3,11 @@
 import { useEffect, useState, type FormEvent } from "react"
 
 type Role = "buyer" | "producer"
-type Profile = { role: Role; name: string; city?: string }
+type Profile = { role: Role; name: string; city?: string; producer?: { name: string; city: string } }
 const roleLabel = { buyer: "Comprador", producer: "Produtor" }
 
 export default function Conta() {
+  const [back, setBack] = useState("/ofertas")
   const [ready, setReady] = useState(false)
   const [authenticated, setAuthenticated] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -14,11 +15,12 @@ export default function Conta() {
   const [token, setToken] = useState("")
   const [notice, setNotice] = useState("")
   const [provider, setProvider] = useState<"chatgpt" | "email" | null>(null)
-  const [role, setRole] = useState<Role>("buyer")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("voltar")
+    if (requested === "/ofertas#basket-title" || requested === "/participar" || requested?.startsWith("/participar?selo=")) setBack(requested)
     const fragment = new URLSearchParams(window.location.hash.slice(1))
     const purpose = fragment.has("verify") ? "verify" : fragment.has("reset") ? "reset" : null
     if (purpose) {
@@ -53,9 +55,9 @@ export default function Conta() {
       const response = await fetch(authenticated ? "/api/profile" : "/api/customer/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(authenticated ? { role, name: form.get("name"), city: form.get("city") } : {
-          action: mode, email: form.get("email"), password, token, role,
-          name: form.get("name"), city: form.get("city"),
+        body: JSON.stringify(authenticated ? { role: "buyer", name: form.get("name") } : {
+          action: mode, email: form.get("email"), password, token, role: "buyer",
+          name: form.get("name"),
         }),
       })
       const result = await response.json()
@@ -111,20 +113,25 @@ export default function Conta() {
     setNotice("")
   }
 
+  const producerActive = profile?.role === "producer" || Boolean(profile?.producer)
+  const returnLabel = back.startsWith("/participar") ? "Voltar para a área do produtor" : "Voltar para a cesta"
+
   return <>
-    <header className="top"><span className="brand">Exergia<span> SOL</span></span><span className="test">Minha conta</span></header>
-    <main>
-      <a href="/">Voltar para o início</a>
+    <main className="journey-page join-panel">
+      <a href={back}>{returnLabel}</a>
       <h1 className="admin-title">{title}</h1>
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {!ready ? <p>Carregando…</p> : profile ? <section className="panel">
         <h2>{profile.name}</h2>
-        <p>{roleLabel[profile.role]}{profile.city && " · " + profile.city}</p>
-        {profile.role === "producer"
-          ? <p>Seu cadastro foi registrado. A configuração do produtor que recebe os pagamentos é feita pela administração.</p>
-          : <a href="/ofertas">Voltar para a cesta</a>}
+        <p>{roleLabel[profile.role]}{profile.role === "buyer" && producerActive && " e produtor"}</p>
+        <div className="journey-actions">
+          <a className="exergia-button exergia-gold" href={back}>{returnLabel}</a>
+          {profile.role === "buyer" && <a href="/ofertas#minhas-solicitacoes">Minhas solicitações</a>}
+          {!back.startsWith("/participar") && <a href="/participar">{producerActive ? "Área do produtor" : "Quero me tornar produtor"}</a>}
+        </div>
         {provider === "email" && <p><button disabled={busy} onClick={() => void logout()}>Sair da conta</button></p>}
+        {provider === "chatgpt" && <p><a href="/signout-with-chatgpt?return_to=%2F" target="_top">Sair da conta</a></p>}
       </section> : <form className="panel" key={mode} onSubmit={register}>
         {!authenticated && !linkMode && <>
           {!recovering && <div className="networks" role="group" aria-label="Acesso por e-mail">
@@ -144,14 +151,8 @@ export default function Conta() {
           </label>}
         </>}
         {signingUp && <>
-          <label className="field">Tipo de cadastro
-            <select value={role} onChange={event => setRole(event.target.value as Role)} disabled={busy}>
-              <option value="buyer">Comprador</option>
-              <option value="producer">Produtor</option>
-            </select>
-          </label>
           <label className="field">Nome<input name="name" maxLength={100} required disabled={busy} /></label>
-          {role === "producer" && <label className="field">Cidade<input name="city" maxLength={100} required disabled={busy} /></label>}
+          <p>Uma conta serve para comprar e ativar seu perfil de produtor. <a href="/termos#termos" target="_blank" rel="noreferrer">Leia os termos do piloto</a>.</p>
         </>}
         <button type="submit" className="primary" disabled={busy || (linkMode && !token)}>
           {busy ? "Aguarde…" : recovering ? "Enviar link de recuperação" : mode === "verify" ? "Confirmar e-mail"
@@ -159,7 +160,7 @@ export default function Conta() {
         </button>
         {entering && <p><button type="button" disabled={busy} onClick={() => changeMode("forgot")}>Esqueci a senha</button></p>}
         {(recovering || linkMode) && <p><button type="button" disabled={busy} onClick={() => changeMode("login")}>Voltar para entrar</button></p>}
-        {!authenticated && !recovering && !linkMode && <p><a href="/signin-with-chatgpt?return_to=%2Fconta" target="_top">Entrar com ChatGPT</a></p>}
+        {!authenticated && !recovering && !linkMode && <p><a href={"/signin-with-chatgpt?return_to=" + encodeURIComponent("/conta?voltar=" + encodeURIComponent(back))} target="_top">Entrar com ChatGPT</a></p>}
       </form>}
     </main>
   </>
