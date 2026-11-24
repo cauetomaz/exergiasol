@@ -166,6 +166,78 @@ function validPassword(value) {
   return typeof value === "string" && value.length >= 12 && value.length <= 128
 }
 
+const freightCities = ["rio", "sao-paulo"]
+const freightKey = "freight/state.json"
+
+async function getFreight(bucket) {
+  const file = await bucket.get(freightKey)
+  const state = file ? await file.json() : { minimums: {}, batches: [] }
+  return { file, state }
+}
+
+async function freightOrders(bucket, state) {
+  const used = new Set(state.batches.flatMap(batch => batch.orders.map(order => order.order)))
+  const candidates = []
+  let cursor
+  do {
+    const page = await bucket.list({ prefix: "pix/", include: ["customMetadata"], limit: 50, cursor })
+    const records = await Promise.all(page.objects.map(async object => {
+      const { id, order, destination } = object.customMetadata ?? {}
+      if (!id || !order || used.has(order)) return null
+      const decision = await bucket.get("decisions/" + id)
+      if (!decision || await decision.text() !== "approved") return null
+      const assignment = destination || await (await bucket.get("freight-destinations/" + id))?.text()
+      return freightCities.includes(assignment) ? { order, destination: assignment, baskets: 1 } : null
+    }))
+    for (const record of records) {
+      if (!record || used.has(record.order)) continue
+      used.add(record.order)
+      candidates.push(record)
+    }
+    cursor = page.truncated ? page.cursor : undefined
+  } while (cursor)
+  return candidates
+}
+
+async function freightRoute(request, bucket) {
+  const { file, state } = await getFreight(bucket)
+  if (request.method === "GET") {
+    const candidates = await freightOrders(bucket, state)
+    const routes = Object.fromEntries(freightCities.map(city => [city, {
+      minimum: state.minimums[city] ?? null,
+      baskets: candidates.filter(order => order.destination === city).length,
+    }]))
+    return json({ routes, batches: state.batches })
+  }
+  if (request.method !== "POST") return error("Operação inválida.", 405)
+  const data = await request.json()
+  if (!freightCities.includes(data?.destination)) return error("Selecione um destino válido.", 400)
+  const city = data.destination
+  if (data.action === "minimum") {
+    if (!Number.isSafeInteger(data.minimum) || data.minimum < 1 || data.minimum > 100_000) {
+      return error("Informe um mínimo válido de cestas.", 400)
+    }
+    state.minimums[city] = data.minimum
+  } else if (data.action === "close") {
+    const minimum = state.minimums[city]
+    if (!minimum) return error("Defina o mínimo de cestas para este destino.", 409)
+    const orders = (await freightOrders(bucket, state)).filter(order => order.destination === city)
+    if (orders.length < minimum) return error("O volume confirmado ainda está abaixo do mínimo.", 409)
+    state.batches.unshift({
+      id: "frete-" + crypto.randomUUID(), origin: "Costa do Cacau, BA", destination: city,
+      minimum, baskets: orders.length, orders: orders.map(({order, baskets}) => ({order, baskets})),
+      closedAt: new Date().toISOString(),
+    })
+  } else {
+    return error("Operação inválida.", 400)
+  }
+  const onlyIf = file ? { etagMatches: file.etag } : { etagDoesNotMatch: "*" }
+  if (!(await bucket.put(freightKey, JSON.stringify(state), { onlyIf }))) {
+    return error("O painel foi atualizado em outra sessão. Atualize e tente novamente.", 409)
+  }
+  return json({ ok: true })
+}
+
 async function route(request, env, url) {
   const { pathname } = url
   const method = request.method
@@ -275,6 +347,22 @@ async function route(request, env, url) {
     return json({ profile }, 201)
   }
 
+  if (pathname === "/api/admin/freight") return freightRoute(request, bucket)
+
+  const legacyDestination = pathname.match(new RegExp("^/api/admin/freight/destination/(" + idPattern + ")$"))?.[1]
+  if (legacyDestination && method === "POST") {
+    const file = await bucket.head("pix/" + legacyDestination)
+    if (!file) return error("Pedido não encontrado.", 404)
+    if (file.customMetadata?.destination) return error("O pedido já tem um destino.", 409)
+    const decision = await bucket.get("decisions/" + legacyDestination)
+    if (!decision || await decision.text() !== "approved") return error("Aprove o comprovante primeiro.", 409)
+    const data = await request.json()
+    if (!freightCities.includes(data?.destination)) return error("Selecione um destino válido.", 400)
+    const result = await bucket.put("freight-destinations/" + legacyDestination, data.destination, { onlyIf: { etagDoesNotMatch: "*" } })
+    if (!result) return error("O pedido já tem um destino.", 409)
+    return json({ destination: data.destination })
+  }
+
   if (pathname === "/api/config" && method === "GET") return json(await getConfig(bucket))
 
   if (pathname === "/api/admin/config" && method === "POST") {
@@ -293,6 +381,8 @@ async function route(request, env, url) {
     const file = form.get("file")
     const order = form.get("order")
     const adults = Number(form.get("adults"))
+    const destination = form.get("destination")
+    if (!freightCities.includes(destination)) return error("Escolha Rio de Janeiro ou São Paulo como destino.", 400)
     if (typeof order !== "string" || !orderPattern.test(order) || !Number.isInteger(adults) || adults < 1 || adults > 10) return error("Informe um pedido válido.", 400)
     if (!(file instanceof File) || !file.size || file.size > 5_000_000 || !Object.hasOwn(uploadTypes, file.type)) {
       return error("Arquivo inválido. Use PDF, PNG ou JPEG de até 5 MB.", 400)
@@ -301,7 +391,7 @@ async function route(request, env, url) {
     if (!validFile(file.type, bytes)) return error("Arquivo inválido. O conteúdo não corresponde ao formato informado.", 400)
     const id = crypto.randomUUID()
     await bucket.put("pix/" + id, bytes, {
-      customMetadata: { id, order, adults: String(adults), created: new Date().toISOString() },
+      customMetadata: { id, order, destination, adults: String(adults), created: new Date().toISOString() },
       httpMetadata: { contentType: file.type },
     })
     return json({ id, status: "pending" }, 201)
@@ -320,7 +410,9 @@ async function route(request, env, url) {
     const reviews = await Promise.all(page.objects.map(async object => {
       const metadata = object.customMetadata
       const decision = await bucket.get("decisions/" + metadata.id)
-      return { ...metadata, status: decision ? await decision.text() : "pending" }
+      const status = decision ? await decision.text() : "pending"
+      const destination = metadata.destination || (status === "approved" ? await (await bucket.get("freight-destinations/" + metadata.id))?.text() : null)
+      return { ...metadata, status, destination }
     }))
     return json({ reviews, cursor: page.truncated ? page.cursor : "" })
   }

@@ -16,6 +16,7 @@ export default function Checkout({ address, walletName, network }: { address: st
   const [config, setConfig] = useState<Config | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState("")
+  const [destination, setDestination] = useState("")
   const [pixId, setPixId] = useState("")
   const [pixStatus, setPixStatus] = useState("")
   const [payment, setPayment] = useState("")
@@ -98,6 +99,7 @@ export default function Checkout({ address, walletName, network }: { address: st
     if (!file) throw new Error("Arquivo obrigatório.")
     const form = new FormData()
     form.set("file", file)
+    form.set("destination", destination)
     form.set("order", order)
     form.set("adults", String(adults))
     const response = await fetch("/api/pix", { method: "POST", body: form })
@@ -170,6 +172,14 @@ export default function Checkout({ address, walletName, network }: { address: st
           <p role="status"><strong>{reviewLabels[pixStatus]}</strong></p>
           <button disabled={busy} onClick={() => void run(refreshPix)}>Atualizar status</button>
         </> : <>
+          <p>O pedido inclui 1 cesta. Os pedidos Pix aprovados são agrupados por destino.</p>
+          <label className="field">Cidade de destino
+            <select value={destination} onChange={event => setDestination(event.target.value)} disabled={busy}>
+              <option value="">Selecione a cidade</option>
+              <option value="rio">Rio de Janeiro, RJ</option>
+              <option value="sao-paulo">São Paulo, SP</option>
+            </select>
+          </label>
           <label className="field">Comprovante (PDF, PNG ou JPEG, até 5 MB)
             <input type="file" accept="application/pdf,image/png,image/jpeg" disabled={busy}
               onChange={event => {
@@ -184,7 +194,7 @@ export default function Checkout({ address, walletName, network }: { address: st
               }} />
           </label>
           {file && preview && <p><a href={preview} target="_blank" rel="noreferrer">Conferir {file.name}</a></p>}
-          <button disabled={!file || busy || !order} onClick={() => void run(upload)}>Enviar para revisão</button>
+          <button disabled={!file || busy || !order || !destination} onClick={() => void run(upload)}>Enviar para revisão</button>
         </>}
       </section>
       {message && <p role="alert" className="error">{message} {message.startsWith("Saldo") && <a href="https://faucet.solana.com/" target="_blank" rel="noreferrer">Abrir faucet</a>}</p>}
