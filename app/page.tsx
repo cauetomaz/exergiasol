@@ -2,213 +2,262 @@
 
 import { getWallets } from "@wallet-standard/app"
 import type { StandardConnectFeature } from "@wallet-standard/features"
-import { useEffect, useState } from "react"
-import Checkout from "./checkout"
-import { solanaTestChain } from "../config/exergia"
+import { useEffect, useRef, useState } from "react"
 
-type Network = "Solana" | "Ethereum"
+type Network = "ethereum" | "solana"
+type PublicKey = { toBase58(): string }
 type Provider = {
   request(input: { method: string }): Promise<unknown>
+  on?(event: string, handler: (accounts: unknown) => void): void
+  removeListener?(event: string, handler: (accounts: unknown) => void): void
 }
-type Announcement = { info: { uuid: string; name: string }; provider: Provider }
-type WalletOption = { id: string; name: string; connect(): Promise<string | undefined> }
+type Phantom = {
+  isPhantom?: boolean
+  connect(): Promise<{ publicKey: PublicKey }>
+  disconnect(): Promise<void>
+  on?(event: string, handler: (key: PublicKey | null) => void): void
+  removeListener?(event: string, handler: (key: PublicKey | null) => void): void
+}
+type Human = Provider & { login(): Promise<string | null>; logout(): Promise<void> }
+type WalletWindow = Window & { ethereum?: Provider; solana?: Phantom; phantom?: { solana?: Phantom }; waap?: Human }
+type Option = {
+  id: string
+  name: string
+  connect(): Promise<string | undefined>
+  disconnect?(): Promise<void>
+  subscribe?(update: (address?: string) => void): () => void
+}
+type Connected = { option: Option; network: Network; address: string }
+
+function evmAddress(accounts: unknown) {
+  const address = Array.isArray(accounts) ? accounts[0] : undefined
+  return typeof address === "string" && /^0x[a-fA-F0-9]{40}$/.test(address) ? address : undefined
+}
+
+function evmOption(id: string, name: string, provider: Provider): Option {
+  return {
+    id, name,
+    async connect() { return evmAddress(await provider.request({ method: "eth_requestAccounts" })) },
+    subscribe(update) {
+      const handle = (accounts: unknown) => update(evmAddress(accounts))
+      provider.on?.("accountsChanged", handle)
+      return () => provider.removeListener?.("accountsChanged", handle)
+    },
+  }
+}
+
+function detectMobile() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+}
 
 export default function Home() {
-  const [network, setNetwork] = useState<Network>("Solana")
-  const [solana, setSolana] = useState<WalletOption[]>([])
-  const [ethereum, setEthereum] = useState<WalletOption[]>([])
-  const [address, setAddress] = useState("")
-  const [status, setStatus] = useState("")
+  const dialog = useRef<HTMLDialogElement>(null)
+  const entry = useRef<HTMLButtonElement>(null)
+  const [network, setNetwork] = useState<Network | null>(null)
+  const [solana, setSolana] = useState<Option[]>([])
+  const [ethereum, setEthereum] = useState<Option[]>([])
+  const [fallback, setFallback] = useState<Option>()
+  const [human, setHuman] = useState<Option>()
+  const [humanLoading, setHumanLoading] = useState(false)
+  const [humanError, setHumanError] = useState(false)
+  const [retry, setRetry] = useState(0)
+  const [mobileLink, setMobileLink] = useState("")
+  const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
-  const [walletName, setWalletName] = useState("")
-  const [shopping, setShopping] = useState(false)
+  const [connected, setConnected] = useState<Connected>()
+  const selected = connected?.option
 
   useEffect(() => {
+    const browser = window as WalletWindow
     const registry = getWallets()
-    function discoverSolana() {
-      setSolana(registry.get().flatMap((wallet, index) => {
-        if (!wallet.chains.some(chain => chain.startsWith("solana:"))) return []
+    function refreshSolana() {
+      const options = registry.get().flatMap<Option>(wallet => {
         const connect = wallet.features["standard:connect"] as StandardConnectFeature["standard:connect"] | undefined
-        if (!connect) return []
+        if (!connect || !wallet.chains.some(chain => chain.startsWith("solana:"))) return []
+        const disconnect = wallet.features["standard:disconnect"] as { disconnect(): Promise<void> } | undefined
+        const events = wallet.features["standard:events"] as {
+          on(event: "change", handler: (event: { accounts?: typeof wallet.accounts }) => void): () => void
+        } | undefined
         return [{
-          id: String(index),
-          name: wallet.name,
+          id: "standard:" + wallet.name, name: wallet.name,
           async connect() {
             const result = await connect.connect()
-            return result.accounts.find(account => account.chains.includes(solanaTestChain))?.address
-              ?? result.accounts.find(account => account.chains.some(chain => chain.startsWith("solana:")))?.address
+            return result.accounts.find(account => account.chains.some(chain => chain.startsWith("solana:")))?.address
+              ?? result.accounts[0]?.address
           },
+          disconnect: disconnect ? () => disconnect.disconnect() : undefined,
+          subscribe: events ? update => events.on("change", ({ accounts }) => {
+            if (accounts) update(accounts[0]?.address)
+          }) : undefined,
         }]
-      }))
+      })
+      const phantom = browser.phantom?.solana ?? browser.solana
+      if (phantom?.isPhantom && !options.some(option => option.name.toLowerCase() === "phantom")) {
+        options.unshift({
+          id: "phantom", name: "Phantom",
+          async connect() { return (await phantom.connect()).publicKey.toBase58() },
+          disconnect: () => phantom.disconnect(),
+          subscribe(update) {
+            const handle = (key: PublicKey | null) => update(key?.toBase58())
+            phantom.on?.("accountChanged", handle)
+            return () => phantom.removeListener?.("accountChanged", handle)
+          },
+        })
+      }
+      setSolana(options)
+      setMobileLink(detectMobile() && !options.length
+        ? "https://phantom.app/ul/browse/" + encodeURIComponent(window.location.href) + "?ref=" + encodeURIComponent(window.location.origin)
+        : "")
+    }
+    function refreshInjected() {
+      refreshSolana()
+      if (typeof browser.ethereum?.request === "function") {
+        setFallback(evmOption("injected", "Carteira do navegador", browser.ethereum))
+      }
+      window.dispatchEvent(new Event("eip6963:requestProvider"))
     }
     function announce(event: Event) {
-      const detail = (event as CustomEvent<Announcement>).detail
+      const detail = (event as CustomEvent<{ info?: { uuid?: string; name?: string }; provider?: Provider }>).detail
       if (!detail?.info?.uuid || !detail.info.name || typeof detail.provider?.request !== "function") return
-      const option: WalletOption = {
-        id: detail.info.uuid,
-        name: detail.info.name,
-        async connect() {
-          const accounts = await detail.provider.request({ method: "eth_requestAccounts" })
-          return Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : undefined
-        },
-      }
-      setEthereum(options => options.some(wallet => wallet.id === option.id) ? options : [...options, option])
+      const option = evmOption(detail.info.uuid, detail.info.name, detail.provider)
+      setEthereum(previous => previous.some(item => item.id === option.id) ? previous : [...previous, option])
     }
-    const offRegister = registry.on("register", discoverSolana)
-    const offUnregister = registry.on("unregister", discoverSolana)
-    discoverSolana()
     window.addEventListener("eip6963:announceProvider", announce)
-    window.dispatchEvent(new Event("eip6963:requestProvider"))
-
-    const injected = (window as Window & { ethereum?: Provider }).ethereum
-    if (typeof injected?.request === "function") {
-      setEthereum(options => options.length ? options : [{
-        id: "injected",
-        name: "Carteira do navegador",
-        async connect() {
-          const accounts = await injected.request({ method: "eth_requestAccounts" })
-          return Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : undefined
-        },
-      }])
-    }
-
+    window.addEventListener("ethereum#initialized", refreshInjected)
+    window.addEventListener("load", refreshInjected)
+    window.addEventListener("focus", refreshInjected)
+    const register = registry.on("register", refreshSolana)
+    const unregister = registry.on("unregister", refreshSolana)
+    refreshInjected()
     return () => {
-      offRegister()
-      offUnregister()
+      register()
+      unregister()
       window.removeEventListener("eip6963:announceProvider", announce)
+      window.removeEventListener("ethereum#initialized", refreshInjected)
+      window.removeEventListener("load", refreshInjected)
+      window.removeEventListener("focus", refreshInjected)
     }
   }, [])
 
-  function selectNetwork(value: Network) {
+  useEffect(() => {
+    if (network !== "ethereum" || human) return
+    let active = true
+    import("@human.tech/waap-sdk").then(({ initWaaP }) => {
+      if (!active) return
+      const browser = window as WalletWindow
+      if (!browser.waap) initWaaP({ config: { authenticationMethods: ["email"] } })
+      const provider = browser.waap
+      if (!provider) throw new Error("Human Wallet indisponível")
+      const option = evmOption("human", "Human Wallet", provider)
+      setHuman({
+        ...option,
+        async connect() {
+          if (!(await provider.login())) return undefined
+          return option.connect()
+        },
+        disconnect: () => provider.logout(),
+      })
+      setHumanLoading(false)
+    }).catch(() => {
+      if (active) { setHumanError(true); setHumanLoading(false) }
+    })
+    return () => { active = false }
+  }, [network, human, retry])
+
+  useEffect(() => selected?.subscribe?.(address => {
+    setConnected(previous => {
+      if (previous?.option !== selected) return previous
+      return address ? { ...previous, address } : undefined
+    })
+  }), [selected])
+
+  function choose(value: Network) {
+    setMessage("")
+    setHumanError(false)
+    setHumanLoading(value === "ethereum" && !human)
     setNetwork(value)
-    setAddress("")
-    setWalletName("")
-    setStatus("")
   }
 
-  async function connectWallet(wallet: WalletOption) {
+  async function connect(option: Option) {
+    if (!network) return
+    const usesHuman = option.id === "human"
+    if (usesHuman) dialog.current?.close()
     setBusy(true)
-    setAddress("")
-    setStatus("")
+    setMessage("")
     try {
-      const account = await wallet.connect()
-      if (!account) {
-        setStatus("A carteira não disponibilizou uma conta para esta rede.")
-        return
-      }
-      setAddress(account)
-      setWalletName(wallet.name)
+      const address = await option.connect()
+      if (!address) setMessage("Conexão não concluída. Você pode tentar de novo.")
+      else setConnected({ option, network, address })
     } catch (error) {
       const code = (error as { code?: number } | null)?.code
-      setStatus(code === 4001 ? "Conexão recusada na carteira." : "Não foi possível conectar. Abra a carteira e tente novamente.")
+      setMessage(code === 4001 ? "Você recusou a conexão na carteira."
+        : code === -32002 ? "Já há um pedido aberto. Confira a janela da carteira."
+          : "A carteira não concluiu a conexão. Abra a extensão ou o aplicativo e tente novamente.")
+    } finally {
+      setBusy(false)
+      if (usesHuman && !dialog.current?.open) dialog.current?.showModal()
+    }
+  }
+
+  async function disconnect() {
+    setBusy(true)
+    setMessage("")
+    try {
+      await connected?.option.disconnect?.()
+      setConnected(undefined)
+      setNetwork(null)
+    } catch {
+      setMessage("Não foi possível desconectar. Tente novamente.")
     } finally {
       setBusy(false)
     }
   }
 
-  const wallets = network === "Solana" ? solana : ethereum.filter(wallet => ethereum.length === 1 || wallet.id !== "injected")
-
-  return (
-    <div className="exergia-home" id="inicio">
-      <header className="exergia-header">
-        <a className="exergia-wordmark" href="#inicio"><span aria-hidden="true">☀</span> Exergia <i>SOL</i></a>
-        <nav aria-label="Navegação principal">
-          <a href="#inicio">Início</a>
-          <a href="/selo#lotes">Lotes</a>
-          <a href="/selo#roadmap">Roadmap</a>
-          <a href="#cestas">Cestas</a>
-          <a href="#carteira">Devnet</a>
-        </nav>
-        <span className="exergia-test">Modo demonstração</span>
-      </header>
-      <main className="exergia-main">
-        <section className="exergia-hero" aria-labelledby="exergia-title">
-          <div className="exergia-intro">
-            <p className="exergia-region">Costa do Cacau · Bahia</p>
-            <h1 id="exergia-title">A origem tem <em>testemunhas.</em></h1>
-            <p>Registre seu lote e peça a outros produtores que confirmem a origem. Duas confirmações completam o selo entre pares.</p>
-            <div className="exergia-actions">
-              <a className="exergia-button exergia-gold" href="/selo#registrar">Registrar lote</a>
-              <a className="exergia-button exergia-outline" href="/selo#selo/CACAU-001">Ver um selo</a>
-              <a className="exergia-button exergia-outline" href="#como-comprar">Como comprar</a>
-            </div>
-          </div>
-          <div className="exergia-art" aria-hidden="true">
-            <div className="exergia-stamp"><span>EXERGIA SOL</span><b>☀</b>Selo entre pares<span>COSTA DO CACAU</span></div>
-          </div>
-        </section>
-        <section className="exergia-section" aria-labelledby="exergia-steps-title">
-          <h2 id="exergia-steps-title">Como vender</h2>
-          <div className="exergia-steps">
-            {[
-              ["Registre o lote", "Informe o produto, o apelido do produtor, a região e a data."],
-              ["Convide outros produtores", "Compartilhe o link com quem visitou o lote."],
-            ].map(([title, description], index) => (
-              <article key={title}>
-                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                <h3>{title}</h3><p>{description}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-        <section id="como-comprar" className="exergia-section" aria-labelledby="exergia-buy-title">
-          <h2 id="exergia-buy-title">Como comprar</h2>
-          <div className="exergia-steps exergia-buy-steps">
-            <article>
-              <h3>Consulte o selo</h3>
-              <p>Confira a origem do lote, quem confirmou e em que data. <a href="/selo#selo/CACAU-001">Ver selo de exemplo</a>.</p>
-            </article>
-            <article>
-              <h3>Escolha sua cesta</h3>
-              <p>Informe para quantos adultos é a compra. Para pedidos por Pix, selecione Rio de Janeiro ou São Paulo no checkout.</p>
-            </article>
-            <article>
-              <h3>Envie o comprovante Pix</h3>
-              <p>Anexe o comprovante no checkout e acompanhe a aprovação. Se quiser experimentar o fluxo SOL, use a rede de testes Devnet.</p>
-            </article>
-            <article>
-              <h3>Aguarde o fechamento do frete</h3>
-              <p>Quando os pedidos Pix aprovados atingirem o mínimo da cidade, a equipe pode reuni-los em um frete da Costa do Cacau.</p>
-            </article>
-          </div>
-          <p className="exergia-buy-action"><a className="exergia-button exergia-gold" href="#cestas">Ver cesta</a></p>
-        </section>
-        <section id="cestas" className="exergia-section exergia-commerce" aria-labelledby="exergia-cestas-title">
-          <h2 id="exergia-cestas-title">Cestas de produtores locais</h2>
-          <p>Escolha sua cesta e pague com SOL de teste ou envie seu comprovante Pix no checkout.</p>
-          <section id="carteira" className="panel" aria-labelledby="wallet-title">
-            <h3 id="wallet-title">Conectar carteira</h3>
-            <p className="hint">Rede de testes · Solana Devnet</p>
-            <div className="networks" role="group" aria-label="Rede da carteira">
-              {(["Solana", "Ethereum"] as const).map(value => (
-                <button key={value} type="button" aria-pressed={network === value} disabled={busy}
-                  onClick={() => selectNetwork(value)}>{value}</button>
-              ))}
-            </div>
-            {wallets.length ? (
-              <ul>{wallets.map(wallet => <li key={wallet.id}>
-                <button type="button" disabled={busy} onClick={() => void connectWallet(wallet)}>{wallet.name}</button>
-              </li>)}</ul>
-            ) : <p className="hint">Nenhuma carteira de {network} detectada. Abra esta página no navegador da sua carteira ou habilite uma extensão compatível.</p>}
-            <div aria-live="polite">
-              {busy && <p>Confirme a conexão na carteira.</p>}
-              {status && <p className="error">{status}</p>}
-              {address && <div className="connected"><strong>{walletName} conectada</strong><code>{address}</code></div>}
-            </div>
-          </section>
-          {shopping ? <Checkout address={address} walletName={walletName} network={network} /> : (
-            <button className="primary" onClick={() => setShopping(true)}>Ver cesta</button>
-          )}
-        </section>
-      </main>
-      <footer className="exergia-footer">
-        <span>Exergia SOL · Costa do Cacau</span>
-        <div className="account-links">
-          <a href="/conta">Cadastro e minha conta</a>
-          <a href="/admin">Acesso administrativo</a>
-          <a href="https://github.com/solanabr/ai-kit">Solana AI Kit no GitHub</a>
-        </div>
-      </footer>
+  const evmWallets = ethereum.length ? ethereum : fallback ? [fallback] : []
+  return <main className="wallet-home">
+    <div className="wallet-cover">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/exergia-cacau.webp" alt="Fruto de cacau na agrofloresta da Costa do Cacau" />
+      <div className="wallet-cover-content">
+        <h1>Exergia <em>SOL</em></h1>
+        <button ref={entry} className="exergia-button exergia-gold" disabled={busy} onClick={() => dialog.current?.showModal()}>
+          {connected ? "Ver carteira" : "Entrar com carteira"}
+        </button>
+      </div>
     </div>
-  )
+    <dialog ref={dialog} className="wallet-dialog" aria-labelledby="wallet-entry-title" onClose={() => entry.current?.focus()}>
+      <div className="wallet-dialog-head">
+        <h2 id="wallet-entry-title">{connected ? "Carteira conectada" : network ? network === "solana" ? "Solana" : "Ethereum" : "Escolha a rede"}</h2>
+        <button type="button" aria-label="Fechar" onClick={() => dialog.current?.close()}>×</button>
+      </div>
+      {connected ? <>
+        <p>{connected.network === "solana" ? "Solana" : "Ethereum"} · {connected.option.name}</p>
+        <code>{connected.address}</code>
+        <button disabled={busy} onClick={() => void disconnect()}>Desconectar</button>
+      </> : !network ? <div className="wallet-options">
+        <button onClick={() => choose("ethereum")}>Ethereum</button>
+        <button onClick={() => choose("solana")}>Solana</button>
+      </div> : <>
+        <div className="wallet-options">
+          {network === "ethereum" ? <>
+            {human && <button disabled={busy} onClick={() => void connect(human)}>Entrar com Human Wallet</button>}
+            {humanLoading && <p role="status">Carregando Human Wallet…</p>}
+            {humanError && <button disabled={busy} onClick={() => {
+              setHumanError(false); setHumanLoading(true); setRetry(count => count + 1)
+            }}>Tentar carregar Human Wallet</button>}
+            {evmWallets.map(option => <button key={option.id} disabled={busy} onClick={() => void connect(option)}>{option.name}</button>)}
+          </> : solana.length ? solana.map(option => <button key={option.id} disabled={busy} onClick={() => void connect(option)}>{option.name}</button>)
+            : <>
+              <p>Nenhuma carteira Solana detectada neste navegador.</p>
+              {mobileLink ? <a href={mobileLink}>Abrir no navegador da Phantom</a>
+                : <a href="https://phantom.com/download" target="_blank" rel="noreferrer">Instalar Phantom</a>}
+            </>}
+        </div>
+        <button type="button" disabled={busy} onClick={() => { setNetwork(null); setMessage("") }}>Voltar</button>
+      </>}
+      {busy && <p role="status">Confira a janela da sua carteira.</p>}
+      {message && <p className="error" role="alert">{message}</p>}
+    </dialog>
+  </main>
 }

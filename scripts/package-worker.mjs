@@ -5,7 +5,7 @@ const root = "out"
 const types = {
   ".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".txt": "text/plain; charset=utf-8",
-  ".ico": "image/x-icon",
+  ".ico": "image/x-icon", ".webp": "image/webp",
 }
 const assets = {}
 for (const file of (await readdir(root, { recursive: true })).sort()) {
