@@ -31,7 +31,7 @@ export default function Checkout({ address, walletName, network }: { address: st
 
   const kcal = adults * 2100 * 30
   const kwh = kcal / 860.42
-  const milliSol = Math.round(kwh)
+  const billableKwh = Math.ceil(kwh)
 
   useEffect(() => {
     setOrder("pedido-" + crypto.randomUUID())
@@ -81,7 +81,7 @@ export default function Checkout({ address, walletName, network }: { address: st
     if (network !== "Solana" || !address) throw new Error("Conecte uma carteira Solana na tela inicial.")
     if (!config?.producer) throw new Error("Não foi configurada uma carteira do produtor.")
     const signature = await sendMemo(walletName, address, "EXERGIA | pagamento | " + order + " | " + kcal + " kcal",
-      { producer: config.producer, lamports: milliSol * 1_000_000 })
+      { producer: config.producer, lamports: billableKwh * 1_000_000 })
     setPayment(signature)
     setPaymentStatus("pending")
     setStep(4)
@@ -172,8 +172,8 @@ export default function Checkout({ address, walletName, network }: { address: st
       </label>
       <dl className="totals">
         <div><dt>Energia</dt><dd>{number.format(kcal)} kcal</dd></div>
-        <div><dt>Equivalência</dt><dd>≈ {number.format(Math.round(kwh))} kWh</dd></div>
-        <div><dt>Preço de teste</dt><dd>{sol.format(milliSol / 1000)} SOL</dd></div>
+        <div><dt>Equivalência</dt><dd>≈ {number.format(billableKwh)} kWh</dd></div>
+        <div><dt>Preço de teste</dt><dd>{sol.format(billableKwh / 1000)} SOL</dd></div>
       </dl>
       {network === "Solana" && <section className="method">
         <h3>Solana Devnet</h3>

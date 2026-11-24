@@ -54,8 +54,9 @@ export async function sendMemo(
       throw new Error("Falha ao conferir a assinatura na carteira.")
     }
     const signature = bs58.encode(signed.signature)
+    const raw = signed.serialize()
     try {
-      await connection.sendRawTransaction(signed.serialize(), { preflightCommitment: "confirmed" })
+      await connection.sendRawTransaction(raw, { preflightCommitment: "confirmed" })
     } catch (error) {
       // A response may be lost after submission. Preserve the signature so the
       // checkout can check the existing transaction instead of resending it.
@@ -89,8 +90,8 @@ export async function restorePayment(signature: string, payer: string, producer:
   const match = memo && "parsed" in memo && typeof memo.parsed === "string"
     ? /^EXERGIA \| pagamento \| (pedido-[0-9a-f-]{36}) \| (\d+) kcal$/.exec(memo.parsed) : null
   const kcal = Number(match?.[2])
-  const amount = Math.round(kcal / 860.42) * 1_000_000
-  if (!transfer || !("parsed" in transfer) || transfer.parsed.info.lamports !== amount
+  const amounts = [Math.ceil(kcal / 860.42), Math.round(kcal / 860.42)].map(value => value * 1_000_000)
+  if (!transfer || !("parsed" in transfer) || !amounts.includes(transfer.parsed.info.lamports)
     || kcal < 63_000 || kcal > 630_000 || kcal % 63_000 !== 0
     || !match || !accountKeys.some(key => key.signer && key.pubkey.toBase58() === payer)) {
     throw new Error("O pagamento não corresponde a essa carteira e ao produtor configurado.")
