@@ -144,3 +144,6 @@ summary { cursor: pointer; }
 }
 .exergia-steps article > h3:first-child { margin-top: 0; }
 .exergia-buy-action { margin: 16px 0 0; }
+@media (min-width: 691px) {
+  .exergia-steps:has(> article:nth-child(2):last-child), .exergia-buy-steps { grid-template-columns: repeat(2, 1fr); }
+}

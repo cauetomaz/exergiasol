@@ -138,12 +138,11 @@ export default function Home() {
           </div>
         </section>
         <section className="exergia-section" aria-labelledby="exergia-steps-title">
-          <h2 id="exergia-steps-title">Como funciona</h2>
+          <h2 id="exergia-steps-title">Como vender</h2>
           <div className="exergia-steps">
             {[
               ["Registre o lote", "Informe o produto, o apelido do produtor, a região e a data."],
               ["Convide outros produtores", "Compartilhe o link com quem visitou o lote."],
-              ["Consulte o selo", "Veja quem confirmou e em que data."],
             ].map(([title, description], index) => (
               <article key={title}>
                 <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
@@ -154,7 +153,11 @@ export default function Home() {
         </section>
         <section id="como-comprar" className="exergia-section" aria-labelledby="exergia-buy-title">
           <h2 id="exergia-buy-title">Como comprar</h2>
-          <div className="exergia-steps">
+          <div className="exergia-steps exergia-buy-steps">
+            <article>
+              <h3>Consulte o selo</h3>
+              <p>Confira a origem do lote, quem confirmou e em que data. <a href="/selo#selo/CACAU-001">Ver selo de exemplo</a>.</p>
+            </article>
             <article>
               <h3>Escolha sua cesta</h3>
               <p>Informe para quantos adultos é a compra. Para pedidos por Pix, selecione Rio de Janeiro ou São Paulo no checkout.</p>
