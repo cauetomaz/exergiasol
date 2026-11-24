@@ -2,6 +2,12 @@
 Projeto piloto do curso de blockchain na solana, participantes Deroila e Giuseppe
 Estamos tentando agregar Sistemas Participativos de Garantia para facilitar o contato dos produtores com consumidores, técnicos e demais interessados, partindo um Organismo Participativo de Avaliação da Conformidade (Opac) legalmente constituído. <https://ciorganicos.com.br/organicos/certificacao-de-organicos/certificacao-participativa/>
 
+## Experimentar o app
+
+**[Abrir o Exergia SOL](https://exergia-sol-compra.greenpillbr.chatgpt.site/)**
+
+Este link abre a versão publicada do piloto. As mudanças da branch de desenvolvimento podem ser testadas seguindo as instruções abaixo.
+
 ## Rodar localmente
 
 Você precisa de Git, Node.js 24 LTS e npm. Os comandos abaixo baixam a branch de desenvolvimento e instalam as versões registradas no `package-lock.json`.
