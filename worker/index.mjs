@@ -512,9 +512,17 @@ async function route(request, env, url) {
 
   const statusId = pathname.match(new RegExp("^/api/pix/(" + idPattern + ")$"))?.[1]
   if (statusId && method === "GET") {
-    if (!(await bucket.head("pix/" + statusId))) return error("Comprovante não encontrado.", 404)
+    const proof = await bucket.head("pix/" + statusId)
+    if (!proof) return error("Comprovante não encontrado.", 404)
     const decision = await bucket.get("decisions/" + statusId)
-    return json({ status: decision ? await decision.text() : "pending" })
+    const status = decision ? await decision.text() : "pending"
+    let freight = null
+    if (status === "approved" && proof.customMetadata?.order) {
+      const { state } = await getFreight(bucket)
+      const batch = state.batches.find(item => item.orders.some(order => order.order === proof.customMetadata.order))
+      if (batch) freight = { destination: batch.destination, closedAt: batch.closedAt }
+    }
+    return json({ status, freight })
   }
 
   if (pathname === "/api/admin/reviews" && method === "GET") {

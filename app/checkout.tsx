@@ -18,6 +18,8 @@ export default function Checkout({ address, walletName, network }: { address: st
   const [preview, setPreview] = useState("")
   const [destination, setDestination] = useState("")
   const [pixId, setPixId] = useState("")
+  const [pixLookup, setPixLookup] = useState("")
+  const [pixFreight, setPixFreight] = useState<{ destination: string; closedAt: string } | null>(null)
   const [pixStatus, setPixStatus] = useState("")
   const [payment, setPayment] = useState("")
   const [paymentStatus, setPaymentStatus] = useState<Status>("pending")
@@ -111,10 +113,14 @@ export default function Checkout({ address, walletName, network }: { address: st
     setPreview("")
   }
 
-  async function refreshPix() {
-    const response = await fetch("/api/pix/" + pixId, { cache: "no-store" })
+  async function refreshPix(id = pixId) {
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id)) throw new Error("Informe o código do comprovante Pix.")
+    const response = await fetch("/api/pix/" + id, { cache: "no-store" })
     if (!response.ok) throw new Error("Não foi possível consultar o comprovante.")
-    setPixStatus((await response.json()).status)
+    const result = await response.json()
+    setPixStatus(result.status)
+    setPixFreight(result.freight)
+    setPixId(id)
   }
 
   if (step === 2) return (
@@ -127,6 +133,16 @@ export default function Checkout({ address, walletName, network }: { address: st
       </label>
       <button type="button" className="primary" onClick={() => setStep(3)}>Ir ao checkout</button>
       <details>
+        <summary>Consultar pedido Pix</summary>
+        <label className="field">Código do comprovante
+          <input value={pixLookup} onChange={event => setPixLookup(event.target.value)} />
+        </label>
+        <button disabled={busy || !pixLookup.trim()} onClick={() => void run(async () => {
+          await refreshPix(pixLookup.trim())
+          setStep(3)
+        })}>Consultar pedido</button>
+      </details>
+      {network === "Solana" && <details>
         <summary>Já paguei em SOL</summary>
         <label className="field">Assinatura da transação
           <input value={recovery} onChange={event => setRecovery(event.target.value)} placeholder="Copie a assinatura do Solscan" />
@@ -139,7 +155,7 @@ export default function Checkout({ address, walletName, network }: { address: st
           setPaymentStatus("confirmed")
           setStep(5)
         })}>Retomar recebimento</button>
-      </details>
+      </details>}
       {message && <p role="alert" className="error">{message}</p>}
     </section>
   )
@@ -149,8 +165,8 @@ export default function Checkout({ address, walletName, network }: { address: st
       <h2>Checkout</h2>
       <p>{config?.name || "Produtor ainda não configurado"}{config?.city && " · " + config.city}</p>
       <p className="hint">Cesta de demonstração com 1 kg de banana, 1 kg de mandioca e 1 maço de couve.</p>
-      <label className="field">Número de adultos
-        <select disabled={Boolean(pixId) || busy} value={adults} onChange={event => setAdults(Number(event.target.value))}>
+      {!pixId && <><label className="field">Número de adultos
+        <select disabled={busy} value={adults} onChange={event => setAdults(Number(event.target.value))}>
           {Array.from({ length: 10 }, (_, index) => index + 1).map(n => <option key={n}>{n}</option>)}
         </select>
       </label>
@@ -159,18 +175,25 @@ export default function Checkout({ address, walletName, network }: { address: st
         <div><dt>Equivalência</dt><dd>≈ {number.format(Math.round(kwh))} kWh</dd></div>
         <div><dt>Preço de teste</dt><dd>{sol.format(milliSol / 1000)} SOL</dd></div>
       </dl>
-      <section className="method">
+      {network === "Solana" && <section className="method">
         <h3>Solana Devnet</h3>
         {config?.producer && <p>Carteira do produtor<code>{config.producer}</code></p>}
-        <button className="primary" disabled={busy || !order || Boolean(pixId)} onClick={() => void run(pay)}>Pagar com SOL de teste</button>
-      </section>
+        {config && !config.producer && <p>O administrador precisa configurar a carteira do produtor antes do primeiro pagamento.</p>}
+        <button className="primary" disabled={busy || !order || !config?.producer} onClick={() => void run(pay)}>Pagar com SOL de teste</button>
+      </section>}</>}
       <section className="method">
         <h3>Pix</h3>
         <p>Envie o comprovante para revisão manual. Para testar o protótipo, use um arquivo fictício.</p>
         {config?.pix && <p>Chave Pix do produtor<code>{config.pix}</code></p>}
         {pixId ? <>
           <p role="status"><strong>{reviewLabels[pixStatus]}</strong></p>
-          <button disabled={busy} onClick={() => void run(refreshPix)}>Atualizar status</button>
+          {pixStatus === "approved" && <p>{pixFreight
+            ? "Seu pedido entrou no frete para " + (pixFreight.destination === "rio" ? "Rio de Janeiro." : "São Paulo.")
+            : "Aguardando a inclusão em um frete para a sua cidade."}</p>}
+          <label className="field">Guarde este código para consultar o pedido depois
+            <input value={pixId} readOnly onFocus={event => event.currentTarget.select()} />
+          </label>
+          <button disabled={busy} onClick={() => void run(() => refreshPix())}>Atualizar status</button>
         </> : <>
           <p>O pedido inclui 1 cesta. Os pedidos Pix aprovados são agrupados por destino.</p>
           <label className="field">Cidade de destino

@@ -183,3 +183,7 @@ summary { cursor: pointer; }
 .wallet-dialog code, .wallet-options { margin-bottom: 1.1rem; }
 .wallet-options { display: grid; gap: .65rem; }
 .wallet-options button { text-align: left; }
+.wallet-manage { color: #18382d; }
+.wallet-app { width: min(100% - 2rem, 42rem); margin: 2.5rem auto; }
+.wallet-app-nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
+.wallet-options p { margin: .25rem 0; }

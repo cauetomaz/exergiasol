@@ -20,11 +20,15 @@ export async function sendMemo(
 ) {
   const wallet = getWallets().get().find(item => item.name === walletName && item.accounts.some(account => account.address === address))
   const account = wallet?.accounts.find(item => item.address === address)
-  if (!account) throw new Error("Conecte a carteira Solana antes de continuar.")
+  const injected = (window as Window & { phantom?: { solana?: {
+    isPhantom: boolean; publicKey?: PublicKey; signTransaction(transaction: Transaction): Promise<Transaction>
+  } } }).phantom?.solana
+  const phantom = walletName === "Phantom" && injected?.isPhantom && injected.publicKey?.toBase58() === address ? injected : undefined
   const feature = wallet?.features["solana:signAndSendTransaction"] as {
     signAndSendTransaction(input: { account: WalletAccount; chain: string; transaction: Uint8Array }): Promise<readonly { signature: Uint8Array }[]>
   } | undefined
-  if (!account.chains.includes(solanaTestChain) || !feature) {
+  if (!account && !phantom) throw new Error("Conecte a carteira Solana antes de continuar.")
+  if (account && (!account.chains.includes(solanaTestChain) || !feature) && !phantom) {
     throw new Error("Ative o modo de testes da carteira e selecione Solana Devnet.")
   }
   const payer = new PublicKey(address)
@@ -41,6 +45,25 @@ export async function sendMemo(
   if (await connection.getBalance(payer) < Number(fee) + (payment?.lamports ?? 0)) {
     throw new Error("Saldo insuficiente. Adicione SOL de teste pelo faucet.")
   }
+  if ((!account || !feature || !account.chains.includes(solanaTestChain)) && phantom) {
+    // Use the configured Devnet RPC for transmission even when the injected wallet
+    // only exposes signing and reports no Wallet Standard Devnet capability.
+    const original = transaction.serializeMessage()
+    const signed = await phantom.signTransaction(transaction)
+    if (!original.equals(signed.serializeMessage()) || !signed.signature) {
+      throw new Error("Falha ao conferir a assinatura na carteira.")
+    }
+    const signature = bs58.encode(signed.signature)
+    try {
+      await connection.sendRawTransaction(signed.serialize(), { preflightCommitment: "confirmed" })
+    } catch (error) {
+      // A response may be lost after submission. Preserve the signature so the
+      // checkout can check the existing transaction instead of resending it.
+      if (error instanceof Error && error.name === "SendTransactionError") throw error
+    }
+    return signature
+  }
+  if (!account || !feature) throw new Error("Ative o modo de testes da carteira e selecione Solana Devnet.")
   const [response] = await feature.signAndSendTransaction({
     account, chain: solanaTestChain, transaction: await transaction.serialize({ requireAllSignatures: false }),
   })

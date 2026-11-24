@@ -1,8 +1,11 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { getWallets } from "@wallet-standard/app"
 import type { StandardConnectFeature } from "@wallet-standard/features"
 import { useEffect, useRef, useState } from "react"
+
+const Checkout = dynamic(() => import("./checkout"))
 
 type Network = "ethereum" | "solana"
 type PublicKey = { toBase58(): string }
@@ -62,6 +65,9 @@ export default function Home() {
   const [humanLoading, setHumanLoading] = useState(false)
   const [humanError, setHumanError] = useState(false)
   const [retry, setRetry] = useState(0)
+  const [external, setExternal] = useState(false)
+  const [inside, setInside] = useState(false)
+  const [metamaskLink, setMetamaskLink] = useState("")
   const [mobileLink, setMobileLink] = useState("")
   const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
@@ -130,6 +136,7 @@ export default function Home() {
     const register = registry.on("register", refreshSolana)
     const unregister = registry.on("unregister", refreshSolana)
     refreshInjected()
+    if (detectMobile()) setMetamaskLink("https://link.metamask.io/dapp/" + window.location.host)
     return () => {
       register()
       unregister()
@@ -146,7 +153,7 @@ export default function Home() {
     import("@human.tech/waap-sdk").then(({ initWaaP }) => {
       if (!active) return
       const browser = window as WalletWindow
-      if (!browser.waap) initWaaP({ config: { authenticationMethods: ["email"] } })
+      if (!browser.waap) initWaaP({ config: { authenticationMethods: ["email", "phone", "social"], allowedSocials: ["google", "twitter", "discord"] } })
       const provider = browser.waap
       if (!provider) throw new Error("Human Wallet indisponível")
       const option = evmOption("human", "Human Wallet", provider)
@@ -174,6 +181,7 @@ export default function Home() {
 
   function choose(value: Network) {
     setMessage("")
+    setExternal(false)
     setHumanError(false)
     setHumanLoading(value === "ethereum" && !human)
     setNetwork(value)
@@ -214,9 +222,30 @@ export default function Home() {
     }
   }
 
+  function continueToApp() {
+    setInside(true)
+    dialog.current?.close()
+  }
+
   const evmWallets = ethereum.length ? ethereum : fallback ? [fallback] : []
-  return <main className="wallet-home">
-    <div className="wallet-cover">
+  return <>
+    {inside ? <>
+      <header className="top">
+        <span className="brand">Exergia<span> SOL</span></span>
+        <button ref={entry} className="wallet-manage" onClick={() => dialog.current?.showModal()}>
+          {connected ? "Minha carteira" : "Conectar carteira"}
+        </button>
+      </header>
+      <main className="wallet-app">
+        <h1>Comprar uma cesta</h1>
+        <p>Escolha o tamanho da família e acompanhe o pagamento ou a revisão do Pix.</p>
+        <Checkout address={connected?.address ?? ""} walletName={connected?.option.name ?? ""}
+          network={connected?.network === "solana" ? "Solana" : connected?.network === "ethereum" ? "Ethereum" : ""} />
+        <nav className="wallet-app-nav" aria-label="Mais áreas do Exergia SOL">
+          <a href="/selo">Selo entre pares</a><a href="/conta">Minha conta</a><a href="/admin">Administração</a>
+        </nav>
+      </main>
+    </> : <main className="wallet-home"><div className="wallet-cover">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/exergia-cacau.webp" alt="Fruto de cacau na agrofloresta da Costa do Cacau" />
       <div className="wallet-cover-content">
@@ -225,7 +254,7 @@ export default function Home() {
           {connected ? "Ver carteira" : "Entrar com carteira"}
         </button>
       </div>
-    </div>
+    </div></main>}
     <dialog ref={dialog} className="wallet-dialog" aria-labelledby="wallet-entry-title" onClose={() => entry.current?.focus()}>
       <div className="wallet-dialog-head">
         <h2 id="wallet-entry-title">{connected ? "Carteira conectada" : network ? network === "solana" ? "Solana" : "Ethereum" : "Escolha a rede"}</h2>
@@ -234,19 +263,29 @@ export default function Home() {
       {connected ? <>
         <p>{connected.network === "solana" ? "Solana" : "Ethereum"} · {connected.option.name}</p>
         <code>{connected.address}</code>
-        <button disabled={busy} onClick={() => void disconnect()}>Desconectar</button>
+        <p>Confira este endereço antes de continuar. Se for outra conta, desconecte e escolha a carteira certa.</p>
+        {!inside && <p><button className="primary" disabled={busy} onClick={continueToApp}>Continuar para o Exergia SOL</button></p>}
+        <button disabled={busy} onClick={() => void disconnect()}>Desconectar e trocar carteira</button>
       </> : !network ? <div className="wallet-options">
         <button onClick={() => choose("ethereum")}>Ethereum</button>
         <button onClick={() => choose("solana")}>Solana</button>
+        <button onClick={continueToApp}>Continuar sem carteira</button>
       </div> : <>
         <div className="wallet-options">
-          {network === "ethereum" ? <>
+          {network === "ethereum" ? external ? <>
+            <p>Selecione a extensão ou abra o site no navegador da sua carteira. Para usar outra conta da mesma extensão, selecione-a na própria carteira antes de conectar.</p>
+            {evmWallets.length ? evmWallets.map(option => <button key={option.id} disabled={busy} onClick={() => void connect(option)}>{option.name}</button>)
+              : <><p>Nenhuma carteira Ethereum foi detectada.</p>
+                {metamaskLink ? <a href={metamaskLink}>Abrir na MetaMask</a> : <a href="https://metamask.io/download/" target="_blank" rel="noreferrer">Instalar MetaMask</a>}</>}
+            <button disabled={busy} onClick={() => setExternal(false)}>Ver opções Ethereum</button>
+          </> : <>
+            <button className="primary" disabled={busy} onClick={() => setExternal(true)}>Conectar uma carteira existente</button>
+            <p>A Human Wallet é uma carteira integrada. Entre com e-mail, telefone ou conta social. Se você já tem uma Human Wallet, use o mesmo método e identificador para acessar o endereço que conhece.</p>
             {human && <button disabled={busy} onClick={() => void connect(human)}>Entrar com Human Wallet</button>}
             {humanLoading && <p role="status">Carregando Human Wallet…</p>}
             {humanError && <button disabled={busy} onClick={() => {
               setHumanError(false); setHumanLoading(true); setRetry(count => count + 1)
             }}>Tentar carregar Human Wallet</button>}
-            {evmWallets.map(option => <button key={option.id} disabled={busy} onClick={() => void connect(option)}>{option.name}</button>)}
           </> : solana.length ? solana.map(option => <button key={option.id} disabled={busy} onClick={() => void connect(option)}>{option.name}</button>)
             : <>
               <p>Nenhuma carteira Solana detectada neste navegador.</p>
@@ -259,5 +298,5 @@ export default function Home() {
       {busy && <p role="status">Confira a janela da sua carteira.</p>}
       {message && <p className="error" role="alert">{message}</p>}
     </dialog>
-  </main>
+  </>
 }
