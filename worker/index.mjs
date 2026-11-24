@@ -349,6 +349,35 @@ async function route(request, env, url) {
 
   if (pathname === "/api/admin/freight") return freightRoute(request, bucket)
 
+  const planId = pathname.match(new RegExp("^/api/admin/freight/plans/(frete-" + idPattern + ")$"))?.[1]
+  if (planId) {
+    const { state } = await getFreight(bucket)
+    if (!state.batches.some(batch => batch.id === planId)) return error("Lote não encontrado.", 404)
+    const key = "freight/plans/" + planId
+    const stored = await bucket.get(key)
+    if (method === "GET") return json({ plan: stored ? await stored.json() : null, revision: stored?.etag ?? "" })
+    if (method !== "POST") return error("Operação inválida.", 405)
+    const { plan, revision } = await request.json()
+    const numbers = ["kg", "packed", "volume", "cubic", "products", "freight", "operation", "advance", "contribution", "handling", "losses", "days"]
+    const strings = { dispatch: 160, receipt: 160, notes: 2000 }
+    if (!numbers.every(field => typeof plan?.[field] === "number" && Number.isFinite(plan[field]) && plan[field] >= 0 && plan[field] <= 10_000_000)
+      || !Object.entries(strings).every(([field, limit]) => typeof plan?.[field] === "string" && plan[field].length <= limit)
+      || !["network", "bus", "parcel", "ltl", "cold"].includes(plan.mode)
+      || !["ambient", "sensitive", "frozen"].includes(plan.cargo)
+      || plan.contribution > 100 || plan.advance > plan.operation || (plan.packed > 0 && plan.packed < plan.kg)) {
+      return error("Confira pesos, custos e condições da expedição.", 400)
+    }
+    if (typeof revision !== "string" || revision !== (stored?.etag ?? "")) {
+      return error("A ficha mudou em outra sessão. Recarregue a ficha antes de salvar.", 409)
+    }
+    const fields = [...numbers, ...Object.keys(strings), "mode", "cargo"]
+    const record = Object.fromEntries(fields.map(field => [field, plan[field]]))
+    const onlyIf = stored ? { etagMatches: revision } : { etagDoesNotMatch: "*" }
+    const updated = await bucket.put(key, JSON.stringify(record), { onlyIf })
+    if (!updated) return error("A ficha mudou em outra sessão. Recarregue a ficha antes de salvar.", 409)
+    return json({ revision: updated.etag })
+  }
+
   const legacyDestination = pathname.match(new RegExp("^/api/admin/freight/destination/(" + idPattern + ")$"))?.[1]
   if (legacyDestination && method === "POST") {
     const file = await bucket.head("pix/" + legacyDestination)

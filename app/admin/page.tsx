@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
+import FreightPlan from "./freight-plan"
+
 type Settings = { producer: string; name: string; city: string; pix: string }
 type City = "rio" | "sao-paulo"
 const cityNames: Record<City, string> = { rio: "Rio de Janeiro, RJ", "sao-paulo": "São Paulo, SP" }
@@ -141,8 +143,10 @@ export default function Admin() {
               <summary>{cityNames[batch.destination]} · {batch.baskets} cesta(s) · {new Date(batch.closedAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</summary>
               <code>{batch.id}</code>
               <ul>{batch.orders.map(item => <li key={item.order}><code>{item.order}</code></li>)}</ul>
+              <FreightPlan batch={batch} />
             </details>)}
           </section> : null}
+          <details className="method"><summary>Planejar custos de frete</summary><FreightPlan /></details>
         </section>
         <section className="panel">
           <h2>Comprovantes</h2>
