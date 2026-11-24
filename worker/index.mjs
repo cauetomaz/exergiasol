@@ -1,3 +1,42 @@
+const customerEncoder = new TextEncoder()
+const customerCookieName = "__Host-exergia-customer"
+
+function customerHex(bytes) {
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("")
+}
+
+async function customerKey(email, secret, sign) {
+  return "email-accounts/" + await sign(secret, "email-key:" + email)
+}
+
+async function passwordHash(password, salt, secret, sign) {
+  const peppered = await sign(secret, "email-password:" + password)
+  const material = await crypto.subtle.importKey("raw", customerEncoder.encode(peppered), "PBKDF2", false, ["deriveBits"])
+  const bits = await crypto.subtle.deriveBits({
+    name: "PBKDF2", hash: "SHA-256", salt: customerEncoder.encode(salt), iterations: 100_000,
+  }, material, 256)
+  return customerHex(bits)
+}
+
+function customerCookie(value, age) {
+  return customerCookieName + "=" + value + "; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=" + age
+}
+
+async function makeCustomerSession(accountKey, secret, sign) {
+  const age = 7 * 24 * 60 * 60
+  const payload = (Date.now() + age * 1000) + "." + accountKey.split("/")[1]
+  return customerCookie(payload + "." + await sign(secret, "email-session:" + payload), age)
+}
+
+async function getCustomerSession(request, secret, sign, equal) {
+  if (!secret) return null
+  const token = request.headers.get("cookie")?.match(/(?:^|;\s*)__Host-exergia-customer=([^;]+)/)?.[1]
+  const match = token?.match(/^((\d{13})\.([a-f0-9]{64}))\.([a-f0-9]{64})$/)
+  if (!match || Number(match[2]) <= Date.now()) return null
+  const expected = await sign(secret, "email-session:" + match[1])
+  return equal(match[4], expected) ? "email-accounts/" + match[3] : null
+}
+
 const encoder = new TextEncoder()
 const idPattern = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 const orderPattern = new RegExp("^pedido-" + idPattern + "$")
@@ -52,6 +91,14 @@ function validFile(type, bytes) {
   return type === "image/jpeg" && [255, 216, 255].every((byte, index) => prefix[index] === byte)
 }
 
+function parseProfile(data) {
+  const name = typeof data?.name === "string" ? data.name.trim() : ""
+  const city = typeof data?.city === "string" ? data.city.trim() : ""
+  if (!["buyer", "producer"].includes(data?.role) || !name || name.length > 100
+    || (data.role === "producer" && (!city || city.length > 100))) return null
+  return { role: data.role, name, ...(data.role === "producer" ? { city } : {}) }
+}
+
 async function route(request, env, url) {
   const { pathname } = url
   const method = request.method
@@ -80,22 +127,51 @@ async function route(request, env, url) {
   if (pathname.startsWith("/api/admin/") && !(await authorized(request, env))) return error("Entre como administrador.", 401)
   const bucket = env.BUCKET
   if (!bucket) return error("Armazenamento privado indisponível.", 503)
+  if (pathname === "/api/customer/session") {
+    if (method === "DELETE") return json({ ok: true }, 200, { "Set-Cookie": customerCookie("", 0) })
+    if (method !== "POST") return error("Operação inválida.", 405)
+    const secret = env.CUSTOMER_SECRET
+    if (!secret) return error("Cadastro por e-mail temporariamente indisponível.", 503)
+    const data = await request.json()
+    const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : ""
+    const password = typeof data?.password === "string" ? data.password : ""
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
+      return error("Informe um e-mail válido e uma senha de 12 a 128 caracteres.", 400)
+    }
+    if (!["register", "login"].includes(data.action)) return error("Operação inválida.", 400)
+    const key = await customerKey(email, secret, sign)
+    if (data.action === "register") {
+      const profile = parseProfile(data)
+      if (!profile) return error("Confira o tipo de cadastro, o nome e a cidade do produtor.", 400)
+      const salt = crypto.randomUUID()
+      const hash = await passwordHash(password, salt, secret, sign)
+      const saved = await bucket.put(key, JSON.stringify({ profile, salt, hash }), { onlyIf: { etagDoesNotMatch: "*" } })
+      if (!saved) return error("Não foi possível criar a conta. Se já tiver cadastro, use Entrar.", 409)
+      return json({ profile }, 201, { "Set-Cookie": await makeCustomerSession(key, secret, sign) })
+    }
+    const file = await bucket.get(key)
+    const account = file ? await file.json() : null
+    const hash = await passwordHash(password, account?.salt ?? "no-account-salt", secret, sign)
+    if (!account || !equal(hash, account.hash)) return error("E-mail ou senha inválidos.", 401)
+    return json({ profile: account.profile }, 200, { "Set-Cookie": await makeCustomerSession(key, secret, sign) })
+  }
+
   if (pathname === "/api/profile") {
+    const customer = await getCustomerSession(request, env.CUSTOMER_SECRET, sign, equal)
+    if (method === "GET" && customer) {
+      const account = await bucket.get(customer)
+      if (account) return json({ profile: (await account.json()).profile, provider: "email" })
+    }
     const identity = request.headers.get("oai-authenticated-user-id")
     if (!identity) return error("Entre com ChatGPT para acessar seu cadastro.", 401)
     const key = "accounts/" + hex(await crypto.subtle.digest("SHA-256", encoder.encode(identity)))
     const stored = await bucket.get(key)
-    if (method === "GET") return json({ profile: stored ? await stored.json() : null })
+    if (method === "GET") return json({ profile: stored ? await stored.json() : null, provider: "chatgpt" })
     if (method !== "POST") return error("Operação inválida.", 405)
     if (stored) return error("Esta conta já tem um cadastro.", 409)
     const data = await request.json()
-    const name = typeof data?.name === "string" ? data.name.trim() : ""
-    const city = typeof data?.city === "string" ? data.city.trim() : ""
-    if (!["buyer", "producer"].includes(data?.role) || !name || name.length > 100
-      || (data.role === "producer" && (!city || city.length > 100))) {
-      return error("Confira o tipo de cadastro, o nome e a cidade do produtor.", 400)
-    }
-    const profile = { role: data.role, name, ...(data.role === "producer" ? { city } : {}) }
+    const profile = parseProfile(data)
+    if (!profile) return error("Confira o tipo de cadastro, o nome e a cidade do produtor.", 400)
     const saved = await bucket.put(key, JSON.stringify(profile), { onlyIf: { etagDoesNotMatch: "*" } })
     if (!saved) return error("Esta conta já tem um cadastro.", 409)
     return json({ profile }, 201)
