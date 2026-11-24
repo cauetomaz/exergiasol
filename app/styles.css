@@ -1,0 +1,50 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #192a24;
+  background: #eef4ef;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem max(1rem, calc((100vw - 66rem) / 2));
+  background: #18382d;
+  color: white;
+}
+.brand { font-weight: 800; font-size: 1.15rem; white-space: nowrap; }
+.brand span { color: #b9ebac; }
+.test { color: #ffe2a2; font-size: .875rem; text-align: right; }
+main { width: min(100% - 2rem, 30rem); margin: clamp(3rem, 10vw, 7rem) auto; }
+h1 { margin: 0; font: 600 clamp(2.35rem, 8vw, 4rem)/1.02 Georgia, serif; }
+p { line-height: 1.55; }
+.intro p, .hint { color: #42584d; }
+.panel { margin-top: 2rem; border: 1px solid #cfddd2; background: white; padding: 1.35rem; border-radius: 1.1rem; }
+h2 { font-size: 1.2rem; margin: 0 0 1rem; }
+.networks { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+button { min-height: 2.75rem; border: 1px solid #b5c7bc; border-radius: .55rem; background: white; color: inherit; font: inherit; cursor: pointer; padding: .45rem .75rem; }
+button[aria-pressed="true"] { background: #205742; border-color: #205742; color: white; }
+button:disabled { cursor: wait; }
+button:focus-visible { outline: 3px solid #8c5100; outline-offset: 3px; }
+ul { list-style: none; padding: 0; display: grid; gap: .5rem; }
+li button { width: 100%; text-align: left; }
+.hint { margin-bottom: 0; }
+.connected { padding: .8rem; background: #eef4ef; border-radius: .5rem; }
+code { display: block; margin-top: .35rem; overflow-wrap: anywhere; }
+.error { color: #942d19; }
+a { color: #205742; text-underline-offset: .2em; }
+.primary { background: #205742; border-color: #205742; color: white; }
+button:disabled { opacity: .65; }
+.start { margin-top: 1rem; width: 100%; }
+footer { margin-top: 2rem; text-align: center; }
+.field { display: grid; gap: .4rem; margin: .9rem 0; font-weight: 600; }
+input, select { max-width: 100%; min-height: 2.5rem; border: 1px solid #b5c7bc; padding: .45rem; border-radius: .4rem; font: inherit; }
+.totals div { display: flex; justify-content: space-between; gap: 1rem; padding: .35rem 0; }
+.totals dd { margin: 0; font-weight: 700; }
+.method { border-top: 1px solid #cfddd2; margin-top: 1rem; padding-top: .5rem; }
+details { margin-top: 1rem; }
+summary { cursor: pointer; }
+.admin-title { margin-top: 1rem; font-size: clamp(2rem, 6vw, 3rem); }

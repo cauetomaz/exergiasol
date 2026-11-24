@@ -1,0 +1,173 @@
+const encoder = new TextEncoder()
+const idPattern = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+const orderPattern = new RegExp("^pedido-" + idPattern + "$")
+const uploadTypes = { "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg" }
+
+function json(body, status = 200, extra = {}) {
+  return Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...extra } })
+}
+
+function error(message, status) {
+  return json({ error: message }, status)
+}
+
+function hex(bytes) {
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("")
+}
+
+function equal(a, b) {
+  if (a.length !== b.length) return false
+  let difference = 0
+  for (let i = 0; i < a.length; i++) difference |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return difference === 0
+}
+
+async function sign(secret, message) {
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+  return hex(await crypto.subtle.sign("HMAC", key, encoder.encode(message)))
+}
+
+function cookie(value, age) {
+  return "__Host-exergia-admin=" + value + "; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=" + age
+}
+
+async function authorized(request, env) {
+  if (!env.ADMIN_SESSION_KEY) return false
+  const token = request.headers.get("cookie")?.match(/(?:^|;\s*)__Host-exergia-admin=([^;]+)/)?.[1]
+  const match = token?.match(/^(\d{13}\.[0-9a-f-]{36})\.([0-9a-f]{64})$/)
+  if (!match || Number(match[1].split(".")[0]) <= Date.now()) return false
+  return equal(match[2], await sign(env.ADMIN_SESSION_KEY, match[1] + ":" + env.ADMIN_PASSWORD_HASH))
+}
+
+async function getConfig(bucket) {
+  const stored = await bucket.get("config/producer.json")
+  if (stored) return stored.json()
+  return { producer: "", name: "", city: "", pix: "" }
+}
+
+function validFile(type, bytes) {
+  const prefix = Array.from(bytes.slice(0, 8))
+  if (type === "application/pdf") return [37, 80, 68, 70, 45].every((byte, index) => prefix[index] === byte)
+  if (type === "image/png") return [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => prefix[index] === byte)
+  return type === "image/jpeg" && [255, 216, 255].every((byte, index) => prefix[index] === byte)
+}
+
+async function route(request, env, url) {
+  const { pathname } = url
+  const method = request.method
+  if (method !== "GET" && request.headers.get("sec-fetch-site") === "cross-site") return error("Origem inválida.", 403)
+  if (method !== "GET" && request.headers.get("origin") && request.headers.get("origin") !== url.origin) {
+    return error("Origem inválida.", 403)
+  }
+
+  if (pathname === "/api/admin/session") {
+    if (method === "GET") return json({ signedIn: await authorized(request, env) })
+    if (method === "DELETE") return json({ ok: true }, 200, { "Set-Cookie": cookie("", 0) })
+    if (method !== "POST") return error("Operação inválida.", 405)
+    if (!env.ADMIN_PASSWORD_HASH || !env.ADMIN_SESSION_KEY || !env.ADMIN_LOGIN) return error("Acesso administrativo pendente de configuração.", 503)
+    const data = await request.json()
+    if (typeof data?.login !== "string" || typeof data?.password !== "string" || data.password.length > 200) return error("Login ou senha inválidos.", 401)
+    const verifier = await sign(env.ADMIN_SESSION_KEY, data.password)
+    if (!(equal(verifier, env.ADMIN_PASSWORD_HASH) && data.login === env.ADMIN_LOGIN)) {
+      return error("Login ou senha inválidos.", 401)
+    }
+    const hours = 4
+    const payload = (Date.now() + hours * 3600_000) + "." + crypto.randomUUID()
+    const mac = await sign(env.ADMIN_SESSION_KEY, payload + ":" + env.ADMIN_PASSWORD_HASH)
+    return json({ signedIn: true }, 200, { "Set-Cookie": cookie(payload + "." + mac, hours * 3600) })
+  }
+
+  if (pathname.startsWith("/api/admin/") && !(await authorized(request, env))) return error("Entre como administrador.", 401)
+  const bucket = env.BUCKET
+  if (!bucket) return error("Armazenamento privado indisponível.", 503)
+  if (pathname === "/api/config" && method === "GET") return json(await getConfig(bucket))
+
+  if (pathname === "/api/admin/config" && method === "POST") {
+    const data = await request.json()
+    const fields = ["producer", "name", "city", "pix"]
+    if (!fields.every(field => typeof data?.[field] === "string" && data[field].length <= 120)) return error("Verifique os dados do produtor.", 400)
+    const settings = Object.fromEntries(fields.map(field => [field, data[field].trim()]))
+    if (settings.producer && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(settings.producer)) return error("Informe um endereço público Solana válido.", 400)
+    await bucket.put("config/producer.json", JSON.stringify(settings))
+    return json(settings)
+  }
+
+  if (pathname === "/api/pix" && method === "POST") {
+    if (Number(request.headers.get("content-length")) > 5_100_000) return error("Arquivo inválido. Limite de 5 MB.", 413)
+    const form = await request.formData()
+    const file = form.get("file")
+    const order = form.get("order")
+    const adults = Number(form.get("adults"))
+    if (typeof order !== "string" || !orderPattern.test(order) || !Number.isInteger(adults) || adults < 1 || adults > 10) return error("Informe um pedido válido.", 400)
+    if (!(file instanceof File) || !file.size || file.size > 5_000_000 || !Object.hasOwn(uploadTypes, file.type)) {
+      return error("Arquivo inválido. Use PDF, PNG ou JPEG de até 5 MB.", 400)
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    if (!validFile(file.type, bytes)) return error("Arquivo inválido. O conteúdo não corresponde ao formato informado.", 400)
+    const id = crypto.randomUUID()
+    await bucket.put("pix/" + id, bytes, {
+      customMetadata: { id, order, adults: String(adults), created: new Date().toISOString() },
+      httpMetadata: { contentType: file.type },
+    })
+    return json({ id, status: "pending" }, 201)
+  }
+
+  const statusId = pathname.match(new RegExp("^/api/pix/(" + idPattern + ")$"))?.[1]
+  if (statusId && method === "GET") {
+    if (!(await bucket.head("pix/" + statusId))) return error("Comprovante não encontrado.", 404)
+    const decision = await bucket.get("decisions/" + statusId)
+    return json({ status: decision ? await decision.text() : "pending" })
+  }
+
+  if (pathname === "/api/admin/reviews" && method === "GET") {
+    const cursor = url.searchParams.get("cursor") || undefined
+    const page = await bucket.list({ prefix: "pix/", include: ["customMetadata"], limit: 30, cursor })
+    const reviews = await Promise.all(page.objects.map(async object => {
+      const metadata = object.customMetadata
+      const decision = await bucket.get("decisions/" + metadata.id)
+      return { ...metadata, status: decision ? await decision.text() : "pending" }
+    }))
+    return json({ reviews, cursor: page.truncated ? page.cursor : "" })
+  }
+
+  const reviewId = pathname.match(new RegExp("^/api/admin/reviews/(" + idPattern + ")$"))?.[1]
+  if (reviewId && method === "GET") {
+    const file = await bucket.get("pix/" + reviewId)
+    if (!file) return error("Comprovante não encontrado.", 404)
+    const extension = uploadTypes[file.httpMetadata?.contentType] || "bin"
+    return new Response(file.body, { headers: {
+      "Content-Type": "application/octet-stream", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+      "Content-Disposition": 'attachment; filename="comprovante-' + reviewId + "." + extension + '"',
+    } })
+  }
+  if (reviewId && method === "POST") {
+    const data = await request.json()
+    if (!["approved", "rejected"].includes(data?.status)) return error("Escolha aprovar ou rejeitar.", 400)
+    if (!(await bucket.head("pix/" + reviewId))) return error("Comprovante não encontrado.", 404)
+    const result = await bucket.put("decisions/" + reviewId, data.status, { onlyIf: { etagDoesNotMatch: "*" } })
+    if (!result) return error("O comprovante já foi revisado.", 409)
+    return json({ status: data.status })
+  }
+  return error("Página não encontrada.", 404)
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url)
+    if (url.pathname.startsWith("/api/")) {
+      try { return await route(request, env, url) }
+      catch (exception) {
+        if (exception instanceof SyntaxError || exception instanceof TypeError) return error("Não foi possível processar a solicitação.", 400)
+        return error("Serviço temporariamente indisponível.", 503)
+      }
+    }
+    if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405 })
+    const path = url.pathname === "/" ? "/index.html" : url.pathname.replace(/\/$/, "")
+    const asset = Object.hasOwn(assets, path) ? assets[path] : assets[path + ".html"]
+    if (!asset) return new Response("Página não encontrada", { status: 404 })
+    const [type, contents] = asset
+    return new Response(request.method === "HEAD" ? null : Uint8Array.from(atob(contents), char => char.charCodeAt(0)), {
+      headers: { "Content-Type": type, "X-Content-Type-Options": "nosniff", "Cache-Control": path.startsWith("/_next/static/") ? "public,max-age=31536000,immutable" : "no-store" },
+    })
+  },
+}
