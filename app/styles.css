@@ -187,3 +187,20 @@ summary { cursor: pointer; }
 .wallet-app { width: min(100% - 2rem, 42rem); margin: 2.5rem auto; }
 .wallet-app-nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
 .wallet-options p { margin: .25rem 0; }
+.offers-app { width: min(100% - 2rem, 66rem); }
+.top > a { color: #fffdf5; }
+.offers-grid, .basket-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .9rem; }
+.offer-card { display: flex; flex-direction: column; align-items: flex-start; padding: 1.2rem; border: 1px solid #d9dece; background: #fffdf5; border-radius: .9rem; }
+.offer-card h2 { margin: .35rem 0; font: 1.4rem Georgia, serif; }
+.offer-card p { margin: .3rem 0; }
+.offer-card .offer-brand { font-size: .875rem; color: #526353; }
+.offer-quantity { display: flex; align-items: center; gap: .8rem; margin-top: auto; padding-top: .7rem; }
+.offer-quantity button { min-width: 2.75rem; }
+.basket-lines li { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #d9dece; padding: .55rem 0; }
+.basket-lines strong { white-space: nowrap; }
+.basket-fields .field { margin: .2rem 0; }
+.basket-delivery > button { margin-top: 1rem; }
+@media (max-width: 620px) { .offers-grid, .basket-fields { grid-template-columns: 1fr; } }
+.basket-jump { position: sticky; top: 0; z-index: 1; background: #193c2c; border-radius: .65rem; padding: .75rem 1rem; margin-bottom: 1rem; }
+.basket-jump a { color: #fffdf5; font-weight: 700; }
+#basket-title { scroll-margin-top: 4rem; }

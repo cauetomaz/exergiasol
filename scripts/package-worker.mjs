@@ -15,5 +15,6 @@ for (const file of (await readdir(root, { recursive: true })).sort()) {
 await mkdir("dist/server", { recursive: true })
 await mkdir("dist/.openai", { recursive: true })
 await copyFile(".openai/hosting.json", "dist/.openai/hosting.json")
+const offers = JSON.parse(await readFile("config/ofertas.json", "utf8"))
 const worker = await readFile("worker/index.mjs", "utf8")
-await writeFile("dist/server/index.js", "const assets = " + JSON.stringify(assets) + "\n" + worker)
+await writeFile("dist/server/index.js", "const assets = " + JSON.stringify(assets) + "\nconst offers = " + JSON.stringify(offers) + "\n" + worker)

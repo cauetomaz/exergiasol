@@ -1,0 +1,9 @@
+[
+  {"id":"tp-cupu-comum","name":"Cupuaçu cristalizado","variant":"Açúcar comum","brand":"Terra Preta","origin":"Uruçuca, BA","grams":1000,"price":23000,"limit":10},
+  {"id":"tp-cupu-coco","name":"Cupuaçu cristalizado","variant":"Açúcar de coco","brand":"Terra Preta","origin":"Uruçuca, BA","grams":1000,"price":25000,"limit":10},
+  {"id":"tp-amendoas-cupu","name":"Amêndoas de cupuaçu","variant":"Descascadas e desidratadas","brand":"Terra Preta","origin":"Uruçuca, BA","grams":1000,"price":5000,"limit":20},
+  {"id":"sc-barra","name":"Barra de chocolate","variant":"Chocolate de origem","brand":"Seo Cacao","origin":"Itacaré, BA","grams":80,"price":2800,"limit":100},
+  {"id":"sc-cacauzinho","name":"Cacauzinho","variant":"Chocolate de origem","brand":"Seo Cacao","origin":"Itacaré, BA","grams":50,"price":1800,"limit":100},
+  {"id":"sc-amendoas-caramelizadas","name":"Amêndoas de cacau caramelizadas","variant":"","brand":"Seo Cacao","origin":"Itacaré, BA","grams":60,"price":1500,"limit":100},
+  {"id":"sc-amendoas-torradas","name":"Amêndoas de cacau torradas","variant":"","brand":"Seo Cacao","origin":"Itacaré, BA","grams":100,"price":1500,"limit":100}
+]

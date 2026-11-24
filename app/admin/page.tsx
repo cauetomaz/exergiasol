@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 
+import BasketRequests from "./basket-requests"
 import FreightPlan from "./freight-plan"
 
 type Settings = { producer: string; name: string; city: string; pix: string }
@@ -97,6 +98,7 @@ export default function Admin() {
           setConfirmRoute(null)
           setSettings(empty)
         })}>Sair</button>
+        <BasketRequests />
         <section className="panel">
           <h2>Fretes da Costa do Cacau, BA</h2>
           <p>Cada pedido Pix aprovado conta como uma cesta. Defina o mínimo de cestas para cada cidade.</p>

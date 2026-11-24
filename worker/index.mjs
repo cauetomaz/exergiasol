@@ -244,13 +244,13 @@ const publicSeal = ({ owner, peers, ...lot }) => ({
   ...lot, peers: peers.map(({ name, date }) => ({ name, date })),
 })
 
-async function sealProducer(request, env, bucket) {
+async function signedProfile(request, env, bucket) {
   const session = await getCustomerSession(request, env.CUSTOMER_SECRET, sign, equal)
   if (session) {
     const record = await bucket.get(session.key)
     const account = record && await record.json()
     if (account && account.verified !== false && (!account.passwordChangedAt || session.issued >= account.passwordChangedAt)) {
-      return account.profile.role === "producer" ? { id: session.key, name: account.profile.name } : null
+      return { id: session.key, profile: account.profile }
     }
   }
   const identity = request.headers.get("oai-authenticated-user-id")
@@ -258,7 +258,12 @@ async function sealProducer(request, env, bucket) {
   const id = "accounts/" + hex(await crypto.subtle.digest("SHA-256", encoder.encode(identity)))
   const record = await bucket.get(id)
   const profile = record && await record.json()
-  return profile?.role === "producer" ? { id, name: profile.name } : null
+  return profile ? { id, profile } : null
+}
+
+async function sealProducer(request, env, bucket) {
+  const user = await signedProfile(request, env, bucket)
+  return user?.profile.role === "producer" ? { id: user.id, name: user.profile.name } : null
 }
 
 async function sealRoute(request, env, bucket, url) {
@@ -320,6 +325,98 @@ async function sealRoute(request, env, bucket, url) {
   return saved ? json({ lot: publicSeal(lot) }) : error("O lote mudou. Atualize a página e tente novamente.", 409)
 }
 
+const basketPrefix = "basket-orders/"
+const basketId = new RegExp("^" + idPattern + "$")
+const adminBasketId = new RegExp("^[a-f0-9]{64}/" + idPattern + "$")
+
+async function listBaskets(bucket, prefix, url, privateView) {
+  const page = await bucket.list({ prefix, limit: 12, cursor: url.searchParams.get("cursor") || undefined })
+  const rows = await Promise.all(page.objects.map(async item => {
+    const file = await bucket.get(item.key)
+    if (!file) return null
+    const { delivery, contact, customer, ...order } = await file.json()
+    return privateView ? { ...order, delivery, contact, customer, key: item.key.slice(basketPrefix.length) } : order
+  }))
+  const orders = rows.filter(Boolean).sort((a, b) => b.created.localeCompare(a.created))
+  return json({ orders, cursor: page.truncated ? page.cursor : "" })
+}
+
+function orderDetails(data) {
+  const text = (value, max) => typeof value === "string" ? value.trim().slice(0, max + 1) : ""
+  const delivery = {
+    city: data?.delivery?.city,
+    cep: text(data?.delivery?.cep, 9).replace("-", ""),
+    street: text(data?.delivery?.street, 120), number: text(data?.delivery?.number, 24),
+    neighborhood: text(data?.delivery?.neighborhood, 80), extra: text(data?.delivery?.extra, 100),
+  }
+  if (!freightCities.includes(delivery.city) || !/^\d{8}$/.test(delivery.cep)
+    || !delivery.street || delivery.street.length > 120 || !delivery.number || delivery.number.length > 24
+    || !delivery.neighborhood || delivery.neighborhood.length > 80 || delivery.extra.length > 100) return null
+  const channel = data?.contact?.channel
+  const value = text(data?.contact?.value, 254)
+  if (channel === "email" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254) {
+    return { delivery, contact: { channel, value } }
+  }
+  if (channel === "whatsapp" && /^[+\d ()-]{10,25}$/.test(value)) {
+    const digits = value.replace(/\D/g, "")
+    if (/^(?:55)?\d{10,11}$/.test(digits)) return { delivery, contact: { channel, value } }
+  }
+  return null
+}
+
+async function basketRoute(request, env, bucket, url) {
+  const user = await signedProfile(request, env, bucket)
+  if (user?.profile.role !== "buyer") return error("Entre com uma conta de comprador para enviar a cesta.", 403)
+  const owner = hex(await crypto.subtle.digest("SHA-256", encoder.encode(user.id)))
+  const prefix = basketPrefix + owner + "/"
+  if (request.method === "GET") return listBaskets(bucket, prefix, url, false)
+  if (request.method !== "POST") return error("Operação inválida.", 405)
+  if (Number(request.headers.get("content-length")) > 8192) return error("O pedido é grande demais.", 413)
+  const data = await request.json()
+  if (!basketId.test(data?.id ?? "") || !Array.isArray(data.items) || !data.items.length || data.items.length > offers.length) {
+    return error("Adicione produtos à sua cesta.", 400)
+  }
+  const details = orderDetails(data)
+  if (!details) return error("Confira o endereço e informe um contato válido.", 400)
+  const items = []
+  const seen = new Set()
+  for (const entry of data.items) {
+    const offer = offers.find(item => item.id === entry?.id)
+    if (!offer || seen.has(offer.id) || !Number.isSafeInteger(entry.quantity) || entry.quantity < 1 || entry.quantity > offer.limit) {
+      return error("Confira os produtos e suas quantidades.", 400)
+    }
+    seen.add(offer.id)
+    items.push({ ...offer, quantity: entry.quantity })
+  }
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const grams = items.reduce((sum, item) => sum + item.grams * item.quantity, 0)
+  const key = prefix + data.id
+  const order = { id: data.id, status: "requested", created: new Date().toISOString(), city: details.delivery.city, items, subtotal, grams }
+  const stored = await bucket.put(key, JSON.stringify({ ...order, ...details, customer: user.profile.name }),
+    { onlyIf: { etagDoesNotMatch: "*" } })
+  if (stored) return json({ order }, 201)
+  const previous = await (await bucket.get(key))?.json()
+  if (!previous) return error("Não foi possível confirmar o envio. Tente novamente.", 409)
+  const { delivery, contact, customer, ...existing } = previous
+  return json({ order: existing })
+}
+
+async function adminBasketRoute(request, bucket, url) {
+  const suffix = url.pathname.slice("/api/admin/baskets".length)
+  if (!suffix && request.method === "GET") return listBaskets(bucket, basketPrefix, url, true)
+  if (request.method !== "POST" || !adminBasketId.test(suffix.slice(1))) return error("Operação inválida.", 405)
+  const key = basketPrefix + suffix.slice(1)
+  const file = await bucket.get(key)
+  if (!file) return error("Cesta não encontrada.", 404)
+  const data = await request.json()
+  if (data?.status !== "contacted") return error("Situação inválida.", 400)
+  const order = await file.json()
+  if (order.status === "contacted") return json({ ok: true })
+  order.status = "contacted"
+  const saved = await bucket.put(key, JSON.stringify(order), { onlyIf: { etagMatches: file.etag } })
+  return saved ? json({ ok: true }) : error("A cesta foi atualizada em outra sessão. Tente novamente.", 409)
+}
+
 async function route(request, env, url) {
   const { pathname } = url
   const method = request.method
@@ -348,6 +445,9 @@ async function route(request, env, url) {
   if (pathname.startsWith("/api/admin/") && !(await authorized(request, env))) return error("Entre como administrador.", 401)
   const bucket = env.BUCKET
   if (!bucket) return error("Armazenamento privado indisponível.", 503)
+  if (pathname === "/api/baskets") return basketRoute(request, env, bucket, url)
+  if (pathname === "/api/admin/baskets" || pathname.startsWith("/api/admin/baskets/")) return adminBasketRoute(request, bucket, url)
+
   if (pathname === "/api/seals" || pathname.startsWith("/api/seals/")) return sealRoute(request, env, bucket, url)
 
   if (pathname === "/api/customer/session") {

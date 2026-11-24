@@ -123,7 +123,7 @@ export default function Conta() {
         <p>{roleLabel[profile.role]}{profile.city && " · " + profile.city}</p>
         {profile.role === "producer"
           ? <p>Seu cadastro foi registrado. A configuração do produtor que recebe os pagamentos é feita pela administração.</p>
-          : <a href="/">Ver cesta</a>}
+          : <a href="/ofertas">Voltar para a cesta</a>}
         {provider === "email" && <p><button disabled={busy} onClick={() => void logout()}>Sair da conta</button></p>}
       </section> : <form className="panel" key={mode} onSubmit={register}>
         {!authenticated && !linkMode && <>

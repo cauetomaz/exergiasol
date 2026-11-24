@@ -5,7 +5,7 @@ import { getWallets } from "@wallet-standard/app"
 import type { StandardConnectFeature } from "@wallet-standard/features"
 import { useEffect, useRef, useState } from "react"
 
-const Checkout = dynamic(() => import("./checkout"))
+const Basket = dynamic(() => import("./ofertas/basket"))
 
 type Network = "ethereum" | "solana"
 type PublicKey = { toBase58(): string }
@@ -236,13 +236,10 @@ export default function Home() {
           {connected ? "Minha carteira" : "Conectar carteira"}
         </button>
       </header>
-      <main className="wallet-app">
-        <h1>Comprar uma cesta</h1>
-        <p>Escolha o tamanho da família e acompanhe o pagamento ou a revisão do Pix.</p>
-        <Checkout address={connected?.address ?? ""} walletName={connected?.option.name ?? ""}
-          network={connected?.network === "solana" ? "Solana" : connected?.network === "ethereum" ? "Ethereum" : ""} />
+      <main className="wallet-app offers-app">
+        <Basket />
         <nav className="wallet-app-nav" aria-label="Mais áreas do Exergia SOL">
-          <a href="/selo">Selo entre pares</a><a href="/conta">Minha conta</a><a href="/admin">Administração</a>
+          <a href="/selo">Selo entre pares</a><a href="/conta">Minha conta</a><a href="/admin">Administração</a><a href="/cestas">Checkout de teste</a>
         </nav>
       </main>
     </> : <main className="wallet-home"><div className="wallet-cover">
