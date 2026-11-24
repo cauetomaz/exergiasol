@@ -1,5 +1,6 @@
 const customerEncoder = new TextEncoder()
 const customerCookieName = "__Host-exergia-customer"
+const customerSessionAge = 7 * 24 * 60 * 60
 
 function customerHex(bytes) {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("")
@@ -23,7 +24,7 @@ function customerCookie(value, age) {
 }
 
 async function makeCustomerSession(accountKey, secret, sign) {
-  const age = 7 * 24 * 60 * 60
+  const age = customerSessionAge
   const payload = (Date.now() + age * 1000) + "." + accountKey.split("/")[1]
   return customerCookie(payload + "." + await sign(secret, "email-session:" + payload), age)
 }
@@ -34,7 +35,7 @@ async function getCustomerSession(request, secret, sign, equal) {
   const match = token?.match(/^((\d{13})\.([a-f0-9]{64}))\.([a-f0-9]{64})$/)
   if (!match || Number(match[2]) <= Date.now()) return null
   const expected = await sign(secret, "email-session:" + match[1])
-  return equal(match[4], expected) ? "email-accounts/" + match[3] : null
+  return equal(match[4], expected) ? { key: "email-accounts/" + match[3], issued: Number(match[2]) - customerSessionAge * 1000 } : null
 }
 
 const encoder = new TextEncoder()
@@ -99,6 +100,72 @@ function parseProfile(data) {
   return { role: data.role, name, ...(data.role === "producer" ? { city } : {}) }
 }
 
+function mailReady(env) {
+  return Boolean(env.RESEND_API_KEY && env.ACCOUNT_EMAIL_FROM)
+}
+
+async function sendAccountLink(env, bucket, key, file, account, email, purpose) {
+  if (account[purpose]?.sentAt > Date.now() - 60_000) return
+  const token = hex(crypto.getRandomValues(new Uint8Array(32)))
+  const duration = purpose === "verify" ? 24 * 60 : 30
+  account[purpose] = {
+    hash: await sign(env.CUSTOMER_SECRET, purpose + ":" + token),
+    expires: Date.now() + duration * 60_000,
+    sentAt: Date.now(),
+  }
+  const saved = await bucket.put(key, JSON.stringify(account), { onlyIf: { etagMatches: file.etag } })
+  if (!saved) return
+  const link = "https://exergia-sol-compra.greenpillbr.chatgpt.site/conta#" + purpose + "=" + key.split("/")[1] + "." + token
+  const subject = purpose === "verify" ? "Confirme seu e-mail no Exergia SOL" : "Redefina sua senha no Exergia SOL"
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: env.ACCOUNT_EMAIL_FROM, to: [email], subject,
+        text: subject + "\n\n" + link + "\n\nEste link só pode ser usado uma vez e expira em "
+          + (purpose === "verify" ? "24 horas." : "30 minutos.") + " Se você não solicitou a operação, ignore este e-mail.",
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (response.ok) return
+  } catch {
+    // Keep the original account available if the mail provider is unreachable.
+  }
+  delete account[purpose]
+  await bucket.put(key, JSON.stringify(account), { onlyIf: { etagMatches: saved.etag } })
+  throw new Error("Account email delivery unavailable")
+}
+
+async function applyAccountLink(data, env, bucket, purpose) {
+  const match = typeof data.token === "string" && data.token.match(/^([a-f0-9]{64})\.([a-f0-9]{64})$/)
+  const invalid = () => error("O link é inválido, expirou ou já foi usado.", 400)
+  if (!match) return invalid()
+  const key = "email-accounts/" + match[1]
+  const file = await bucket.get(key)
+  const account = file && await file.json()
+  const ticket = account && account[purpose]
+  if (!ticket || ticket.expires <= Date.now()
+    || !equal(ticket.hash, await sign(env.CUSTOMER_SECRET, purpose + ":" + match[2]))) return invalid()
+  if (purpose === "verify") {
+    account.verified = true
+  } else {
+    if (!validPassword(data.password)) return error("Use uma senha de 12 a 128 caracteres.", 400)
+    account.salt = crypto.randomUUID()
+    account.hash = await passwordHash(data.password, account.salt, env.CUSTOMER_SECRET, sign)
+    account.passwordChangedAt = Date.now()
+    account.verified = true
+    delete account.verify
+  }
+  delete account[purpose]
+  if (!(await bucket.put(key, JSON.stringify(account), { onlyIf: { etagMatches: file.etag } }))) return invalid()
+  return purpose === "verify" ? json({ ok: true }) : json({ ok: true }, 200, { "Set-Cookie": customerCookie("", 0) })
+}
+
+function validPassword(value) {
+  return typeof value === "string" && value.length >= 12 && value.length <= 128
+}
+
 async function route(request, env, url) {
   const { pathname } = url
   const method = request.method
@@ -133,34 +200,65 @@ async function route(request, env, url) {
     const secret = env.CUSTOMER_SECRET
     if (!secret) return error("Cadastro por e-mail temporariamente indisponível.", 503)
     const data = await request.json()
-    const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : ""
-    const password = typeof data?.password === "string" ? data.password : ""
-    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
-      return error("Informe um e-mail válido e uma senha de 12 a 128 caracteres.", 400)
+    if (data?.action === "verify" || data?.action === "reset") {
+      return applyAccountLink(data, env, bucket, data.action)
     }
-    if (!["register", "login"].includes(data.action)) return error("Operação inválida.", 400)
+    const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : ""
+    const password = data?.password
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Informe um e-mail válido.", 400)
     const key = await customerKey(email, secret, sign)
+    if (data.action === "forgot") {
+      if (!mailReady(env)) return error("O envio de e-mail ainda não está disponível.", 503)
+      const accountFile = await bucket.get(key)
+      if (accountFile) {
+        await sendAccountLink(env, bucket, key, accountFile, await accountFile.json(), email, "reset").catch(() => {})
+      }
+      return json({ ok: true })
+    }
+    if (!validPassword(password)) return error("Use uma senha de 12 a 128 caracteres.", 400)
     if (data.action === "register") {
       const profile = parseProfile(data)
       if (!profile) return error("Confira o tipo de cadastro, o nome e a cidade do produtor.", 400)
       const salt = crypto.randomUUID()
       const hash = await passwordHash(password, salt, secret, sign)
-      const saved = await bucket.put(key, JSON.stringify({ profile, salt, hash }), { onlyIf: { etagDoesNotMatch: "*" } })
+      const account = { profile, salt, hash, ...(mailReady(env) ? { verified: false } : {}) }
+      const saved = await bucket.put(key, JSON.stringify(account), { onlyIf: { etagDoesNotMatch: "*" } })
       if (!saved) return error("Não foi possível criar a conta. Se já tiver cadastro, use Entrar.", 409)
+      if (account.verified === false) {
+        try {
+          await sendAccountLink(env, bucket, key, saved, account, email, "verify")
+          return json({ verificationRequired: true }, 201)
+        } catch {
+          return error("Conta criada, mas o e-mail não foi enviado. Use Entrar para tentar novamente.", 502)
+        }
+      }
       return json({ profile }, 201, { "Set-Cookie": await makeCustomerSession(key, secret, sign) })
     }
+    if (data.action !== "login") return error("Operação inválida.", 400)
     const file = await bucket.get(key)
     const account = file ? await file.json() : null
     const hash = await passwordHash(password, account?.salt ?? "no-account-salt", secret, sign)
     if (!account || !equal(hash, account.hash)) return error("E-mail ou senha inválidos.", 401)
+    if (account.verified !== true && mailReady(env)) {
+      try {
+        await sendAccountLink(env, bucket, key, file, account, email, "verify")
+        return json({ verificationRequired: true })
+      } catch {
+        return error("Não foi possível enviar a confirmação. Tente novamente mais tarde.", 502)
+      }
+    }
+    if (account.verified === false) return error("Confirme seu e-mail para entrar.", 403)
     return json({ profile: account.profile }, 200, { "Set-Cookie": await makeCustomerSession(key, secret, sign) })
   }
 
   if (pathname === "/api/profile") {
     const customer = await getCustomerSession(request, env.CUSTOMER_SECRET, sign, equal)
     if (method === "GET" && customer) {
-      const account = await bucket.get(customer)
-      if (account) return json({ profile: (await account.json()).profile, provider: "email" })
+      const accountFile = await bucket.get(customer.key)
+      const account = accountFile && await accountFile.json()
+      if (account && (!account.passwordChangedAt || customer.issued >= account.passwordChangedAt)) {
+        return json({ profile: account.profile, provider: "email" })
+      }
     }
     const identity = request.headers.get("oai-authenticated-user-id")
     if (!identity) return error("Entre com ChatGPT para acessar seu cadastro.", 401)
