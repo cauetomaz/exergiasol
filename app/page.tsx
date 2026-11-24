@@ -109,40 +109,84 @@ export default function Home() {
   const wallets = network === "Solana" ? solana : ethereum.filter(wallet => ethereum.length === 1 || wallet.id !== "injected")
 
   return (
-    <>
-      <header className="top">
-        <span className="brand">Exergia<span> SOL</span></span>
-        <span className="test">Rede de testes · Solana Devnet</span>
+    <div className="exergia-home" id="inicio">
+      <header className="exergia-header">
+        <a className="exergia-wordmark" href="#inicio"><span aria-hidden="true">☀</span> Exergia <i>SOL</i></a>
+        <nav aria-label="Navegação principal">
+          <a href="#inicio">Início</a>
+          <a href="/selo#lotes">Lotes</a>
+          <a href="/selo#roadmap">Roadmap</a>
+          <a href="#cestas">Cestas</a>
+          <a href="#carteira">Devnet</a>
+        </nav>
+        <span className="exergia-test">Modo demonstração</span>
       </header>
-      <main>
-        <section className="intro">
-          <h1>Cestas de produtores locais</h1>
-          <p>Escolha sua cesta e pague com SOL de teste ou envie seu comprovante Pix no checkout.</p>
+      <main className="exergia-main">
+        <section className="exergia-hero" aria-labelledby="exergia-title">
+          <div className="exergia-intro">
+            <p className="exergia-region">Costa do Cacau · Bahia</p>
+            <h1 id="exergia-title">A origem tem <em>testemunhas.</em></h1>
+            <p>Registre seu lote e peça a outros produtores que confirmem a origem. Duas confirmações completam o selo entre pares.</p>
+            <div className="exergia-actions">
+              <a className="exergia-button exergia-gold" href="/selo#registrar">Registrar lote</a>
+              <a className="exergia-button exergia-outline" href="/selo#selo/CACAU-001">Ver um selo</a>
+            </div>
+          </div>
+          <div className="exergia-art" aria-hidden="true">
+            <div className="exergia-stamp"><span>EXERGIA SOL</span><b>☀</b>Selo entre pares<span>COSTA DO CACAU</span></div>
+          </div>
         </section>
-        <section className="panel" aria-labelledby="wallet-title">
-          <h2 id="wallet-title">Conectar carteira</h2>
-          <div className="networks" role="group" aria-label="Rede da carteira">
-            {(["Solana", "Ethereum"] as const).map(value => (
-              <button key={value} type="button" aria-pressed={network === value} disabled={busy}
-                onClick={() => selectNetwork(value)}>{value}</button>
+        <section className="exergia-section" aria-labelledby="exergia-steps-title">
+          <h2 id="exergia-steps-title">Como funciona</h2>
+          <div className="exergia-steps">
+            {[
+              ["Registre o lote", "Informe o produto, o apelido do produtor, a região e a data."],
+              ["Convide outros produtores", "Compartilhe o link com quem visitou o lote."],
+              ["Consulte o selo", "Veja quem confirmou e em que data."],
+            ].map(([title, description], index) => (
+              <article key={title}>
+                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                <h3>{title}</h3><p>{description}</p>
+              </article>
             ))}
           </div>
-          {wallets.length ? (
-            <ul>{wallets.map(wallet => <li key={wallet.id}>
-              <button type="button" disabled={busy} onClick={() => void connectWallet(wallet)}>{wallet.name}</button>
-            </li>)}</ul>
-          ) : <p className="hint">Nenhuma carteira de {network} detectada. Abra esta página no navegador da sua carteira ou habilite uma extensão compatível.</p>}
-          <div aria-live="polite">
-            {busy && <p>Confirme a conexão na carteira.</p>}
-            {status && <p className="error">{status}</p>}
-            {address && <div className="connected"><strong>{walletName} conectada</strong><code>{address}</code></div>}
-          </div>
         </section>
-        {shopping ? <Checkout address={address} walletName={walletName} network={network} /> : (
-          <button className="primary start" onClick={() => setShopping(true)}>Ver cesta</button>
-        )}
-        <footer className="account-links"><a href="/selo">Selo entre pares</a><a href="/conta">Cadastro e minha conta</a><a href="/admin">Acesso administrativo</a></footer>
+        <section id="cestas" className="exergia-section exergia-commerce" aria-labelledby="exergia-cestas-title">
+          <h2 id="exergia-cestas-title">Cestas de produtores locais</h2>
+          <p>Escolha sua cesta e pague com SOL de teste ou envie seu comprovante Pix no checkout.</p>
+          <section id="carteira" className="panel" aria-labelledby="wallet-title">
+            <h3 id="wallet-title">Conectar carteira</h3>
+            <p className="hint">Rede de testes · Solana Devnet</p>
+            <div className="networks" role="group" aria-label="Rede da carteira">
+              {(["Solana", "Ethereum"] as const).map(value => (
+                <button key={value} type="button" aria-pressed={network === value} disabled={busy}
+                  onClick={() => selectNetwork(value)}>{value}</button>
+              ))}
+            </div>
+            {wallets.length ? (
+              <ul>{wallets.map(wallet => <li key={wallet.id}>
+                <button type="button" disabled={busy} onClick={() => void connectWallet(wallet)}>{wallet.name}</button>
+              </li>)}</ul>
+            ) : <p className="hint">Nenhuma carteira de {network} detectada. Abra esta página no navegador da sua carteira ou habilite uma extensão compatível.</p>}
+            <div aria-live="polite">
+              {busy && <p>Confirme a conexão na carteira.</p>}
+              {status && <p className="error">{status}</p>}
+              {address && <div className="connected"><strong>{walletName} conectada</strong><code>{address}</code></div>}
+            </div>
+          </section>
+          {shopping ? <Checkout address={address} walletName={walletName} network={network} /> : (
+            <button className="primary" onClick={() => setShopping(true)}>Ver cesta</button>
+          )}
+        </section>
       </main>
-    </>
+      <footer className="exergia-footer">
+        <span>Exergia SOL · Costa do Cacau</span>
+        <div className="account-links">
+          <a href="/conta">Cadastro e minha conta</a>
+          <a href="/admin">Acesso administrativo</a>
+          <a href="https://github.com/solanabr/ai-kit">Solana AI Kit no GitHub</a>
+        </div>
+      </footer>
+    </div>
   )
 }

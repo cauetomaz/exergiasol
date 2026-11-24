@@ -52,3 +52,93 @@ summary { cursor: pointer; }
 .seal-nav { display: flex; flex-wrap: wrap; gap: .7rem 1.1rem; margin-bottom: 1.4rem; }
 .seal-page .totals dd { text-align: right; overflow-wrap: anywhere; }
 .seal-page input[type="checkbox"] { min-height: auto; }
+
+.exergia-home {
+  --exergia-ink: #21382a;
+  --exergia-paper: #f8f5e9;
+  --exergia-line: #d9dece;
+  --exergia-green: #193c2c;
+  --exergia-gold: #f5cb70;
+  --exergia-muted: #526353;
+  min-height: 100vh;
+  background: var(--exergia-paper);
+  color: var(--exergia-ink);
+}
+.exergia-header, .exergia-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  max-width: 1170px;
+  margin: auto;
+  padding: 24px 28px;
+}
+.exergia-header a { color: inherit; text-decoration: none; }
+.exergia-header a:hover { text-decoration: underline; }
+.exergia-header nav { display: flex; flex-wrap: wrap; gap: 22px; font-size: .875rem; font-weight: 650; }
+.exergia-wordmark { font: bold 1.5rem Georgia, serif; white-space: nowrap; }
+.exergia-wordmark span { color: #ad7228; }
+.exergia-wordmark i { color: #8b591e; font-style: normal; }
+.exergia-test { border: 1px solid var(--exergia-line); padding: 6px 10px; border-radius: 30px; font-size: .875rem; white-space: nowrap; }
+.exergia-main { width: auto; max-width: 1170px; margin: auto; padding: 20px 28px 48px; }
+.exergia-hero {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  min-height: 430px;
+  overflow: hidden;
+  border-radius: 24px;
+  background: var(--exergia-green);
+  color: var(--exergia-paper);
+}
+.exergia-intro { padding: clamp(30px, 6vw, 76px); }
+.exergia-intro h1 { font: normal clamp(2.75rem, 6.6vw, 5.375rem)/.95 Georgia, serif; letter-spacing: -.055em; margin: 0 0 16px; }
+.exergia-intro h1 em { color: var(--exergia-gold); }
+.exergia-intro p { max-width: 410px; margin: 0 0 20px; color: #e0e8d7; }
+.exergia-intro .exergia-region { font-size: .8125rem; font-weight: 750; text-transform: uppercase; letter-spacing: .19em; }
+.exergia-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.exergia-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 11px 19px; border: 1px solid transparent; border-radius: 9px; font-size: .875rem; font-weight: 700; text-decoration: none; }
+.exergia-gold { background: var(--exergia-gold); color: var(--exergia-ink); }
+.exergia-outline { color: inherit; border-color: currentColor; }
+.exergia-art {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  background: radial-gradient(ellipse at 85% 15%, #41604a, transparent 65%),
+    repeating-radial-gradient(ellipse at 100% 110%, transparent 0 16px, #a4b48855 17px 18px, transparent 19px 27px), #244735;
+}
+.exergia-stamp {
+  display: grid;
+  place-content: center;
+  width: min(68%, 270px);
+  aspect-ratio: 1;
+  padding: 14px;
+  border: 1px solid var(--exergia-gold);
+  border-radius: 50%;
+  outline: 1px dashed var(--exergia-gold);
+  outline-offset: 9px;
+  transform: rotate(-9deg);
+  color: var(--exergia-gold);
+  text-align: center;
+  font: clamp(1.125rem, 3vw, 2.1875rem) Georgia, serif;
+}
+.exergia-stamp span { font: 700 .625rem system-ui, sans-serif; letter-spacing: .2em; margin: 12px 0; }
+.exergia-stamp b { font-size: 2em; font-weight: normal; }
+.exergia-section { margin-top: 44px; }
+.exergia-section > h2 { font: normal clamp(2rem, 5vw, 3.25rem)/1 Georgia, serif; letter-spacing: -.04em; }
+.exergia-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.exergia-steps article, .exergia-commerce .panel { background: #fffdf5; border: 1px solid var(--exergia-line); border-radius: 16px; padding: 24px; }
+.exergia-steps article span { display: inline-block; border-radius: 30px; background: #e9eedc; padding: 6px 11px; font-size: .8125rem; font-weight: 700; }
+.exergia-steps h3 { font: normal 1.5625rem Georgia, serif; margin: 14px 0 16px; }
+.exergia-steps p { color: var(--exergia-muted); margin: 0; }
+.exergia-commerce { max-width: 760px; }
+.exergia-commerce > button { margin-top: 1rem; }
+.exergia-footer { border-top: 1px solid var(--exergia-line); color: var(--exergia-muted); font-size: .875rem; text-align: left; }
+.exergia-home :focus-visible { outline: 3px solid #ae681b; outline-offset: 4px; }
+@media (max-width: 690px) {
+  .exergia-hero, .exergia-steps { grid-template-columns: 1fr; }
+  .exergia-art { min-height: 235px; }
+  .exergia-stamp { width: 150px; }
+  .exergia-header, .exergia-footer { padding: 18px 16px; flex-wrap: wrap; }
+  .exergia-header nav { gap: 12px; }
+  .exergia-main { padding: 12px 16px 36px; }
+}
